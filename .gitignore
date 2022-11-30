@@ -221,3 +221,8 @@ docs/Makefile
 *.bat
 *.zip
 *.rar
+**/~$*
+**/venv/
+**/__pycache__
+**/*.db*
+**/.pytest_cache

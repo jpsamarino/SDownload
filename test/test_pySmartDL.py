@@ -24,21 +24,18 @@ class TestSmartDL(unittest.TestCase):
             
         self.res_7za920_mirrors = [
             "https://github.com/iTaybb/pySmartDL/raw/master/test/7za920.zip",
-            "https://sourceforge.mirrorservice.org/s/se/sevenzip/7-Zip/9.20/7za920.zip",
-            "http://www.bevc.net/dl/7za920.zip",
-            "http://ftp.psu.ru/tools/7-zip/stable/7za920.zip",
-            "http://www.mirrorservice.org/sites/downloads.sourceforge.net/s/se/sevenzip/7-Zip/9.20/7za920.zip"
+            "http://www.bevc.net/dl/7za920.zip"
         ]
         self.res_7za920_hash = '2a3afe19c180f8373fa02ff00254d5394fec0349f5804e0ad2f6067854ff28ac'
-        self.res_testfile_1gb = 'http://www.ovh.net/files/1Gio.dat'
-        self.res_testfile_100mb = 'http://www.ovh.net/files/100Mio.dat'
+        self.res_testfile_1gb = 'https://ftp.dadosabertos.ans.gov.br/FTP/PDA/abrangencia_geografica_comercializacao_planos_ntrp/pda_abra_geo_comer_nrtp.csv'
+        self.res_testfile_100mb = 'https://ftp.dadosabertos.ans.gov.br/FTP/PDA/beneficiarios_identificados_sus_abi/ressarc_benef_SUS_ABI.zipftp://ftp.dadosabertos.ans.gov.br/FTP/PDA/beneficiarios_identificados_sus_abi/ressarc_benef_SUS_ABI.zip'
         self.enable_logging = "-vvv" in sys.argv
 
     def test_dependencies(self):
         self.assertTrue(sys.version_info >= (3, 4))
     
     def test_download(self):
-        obj = pySmartDL.SmartDL(self.res_7za920_mirrors, dest=self.dl_dir, progress_bar=False, connect_default_logger=self.enable_logging)
+        obj = pySmartDL.SmartDL(self.res_7za920_mirrors, dest=self.dl_dir, progress_bar=False, connect_default_logger=True)
         obj.start()
         self.assertEqual(obj.get_progress_bar(), '[##################]')
 
@@ -82,13 +79,13 @@ class TestSmartDL(unittest.TestCase):
         
         # pause
         obj.pause()
-        time.sleep(0.5)
+        time.sleep(5.5)
         if obj.get_status() == "finished":
             # too bad, the file was too small and was downloaded complectely until we stopped it.
             # We should download a bigger file
             if self.res_testfile_100mb == testfile:
                 self.fail("The download got completed before we could stop it, even though we've used a big file. Are we on a 100GB/s internet connection or somethin'?")
-            return self.test_pause_unpause(testfile=self.res_testfile_100mb)
+            return self.test_pause_unpause(testfile=self.res_7za920_mirrors)
         
         dl_size = obj.get_dl_size()
 
@@ -105,7 +102,7 @@ class TestSmartDL(unittest.TestCase):
         self.assertTrue(obj.isSuccessful())
 
     def test_stop(self):
-        obj = pySmartDL.SmartDL(self.res_testfile_100mb, dest=self.dl_dir, progress_bar=False, connect_default_logger=self.enable_logging)
+        obj = pySmartDL.SmartDL(self.res_testfile_1gb, dest=self.dl_dir, progress_bar=False, connect_default_logger=self.enable_logging,verify=False)
         obj.start(blocking=False)
 
         while not obj.get_dl_size():
@@ -116,7 +113,7 @@ class TestSmartDL(unittest.TestCase):
         self.assertFalse(obj.isSuccessful())
 
     def test_speed_limiting(self):
-        obj = pySmartDL.SmartDL(self.res_testfile_1gb, dest=self.dl_dir, progress_bar=False, connect_default_logger=self.enable_logging)
+        obj = pySmartDL.SmartDL(self.res_testfile_1gb, dest=self.dl_dir, progress_bar=False, connect_default_logger=self.enable_logging,verify=False)
         obj.limit_speed(1024**2)  # 1MB per sec
         obj.start(blocking=False)
 
@@ -157,7 +154,8 @@ class TestSmartDL(unittest.TestCase):
     def test_custom_headers(self):
         # sending custom user agent
         ua = "pySmartDL/1.3.2"
-       	request_args = {"headers": {"User-Agent": ua}}
+
+        request_args = {"headers": {"User-Agent": ua}}
         obj = pySmartDL.SmartDL("http://httpbin.org/headers", request_args=request_args, progress_bar=False)
         obj.start()
         data = obj.get_json()
