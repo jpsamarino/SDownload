@@ -1,0 +1,34 @@
+[MASTER]
+ignore=venv,.venv,migrations
+init-hook='import sys; sys.path.insert(0, "src")'
+
+[MESSAGES CONTROL]
+disable=
+    missing-docstring,
+    too-few-public-methods,
+    too-many-locals,
+    too-many-return-statements,
+    too-many-branches,
+    too-many-statements,
+    R0801,  # Similar lines in XXX files
+    C0114,  # Missing module docstring
+    C0115,  # Missing class docstring
+    C0116,  # Missing function or method docstring
+    W0613,  # Unused argument
+    W2301,  # Unnecessary ellipsis (útil em Protocol)
+    R0903,  # Too few public methods
+    R0902,  # Too many instance attributes
+
+[TYPECHECK]
+ignored-modules=pytest
+ignored-classes=typing.Any
+
+[FORMAT]
+max-line-length=100
+
+[DESIGN]
+max-args=6
+max-attributes=10
+
+[IMPORTS]
+include-naming-hint=yes
