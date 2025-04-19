@@ -1,0 +1,12 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class FileInfoModel:
+    file_name: str
+    content_type: str
+    file_size: int
+    file_id: str | None  # can be etag for http or other unique id for file in other protocols
+    download_url: str
+    transmission_protocol: str
+    server_accept_ranges: bool
