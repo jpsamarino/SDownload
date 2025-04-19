@@ -6,9 +6,9 @@ class DownloaderProtocol(Protocol):
     async def download_chunk(
             self,
             url: str,
-            startByte: int = 0,
-            endByte: int = None,
-            retries: int = 3) -> AsyncIterator[bytes]:
+            start_byte: int = 0,
+            end_byte: int = None,
+    ) -> AsyncIterator[bytes]:
         """
         Download a chunk of data from a specified URL.
 
