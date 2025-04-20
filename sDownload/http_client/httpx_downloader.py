@@ -1,4 +1,6 @@
 import asyncio
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import AsyncIterator, Optional
 import httpx
 from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
@@ -22,32 +24,6 @@ class HttpxDownloader(DownloaderProtocol):
         auth = f"{spc.username}:{spc.password}@" if spc.username and spc.password else ""
         return f"{spc.protocol.value}://{auth}{spc.host}:{spc.port}"
 
-    async def _is_range_supported(self, client: httpx.AsyncClient, url: str) -> bool:
-        try:
-            head_resp = await client.head(url)
-            head_resp.raise_for_status()
-            full_size = int(head_resp.headers.get('Content-Length', 0))
-            if full_size <= 0:
-                return False
-
-            # Stream a small byte range to detect range support
-            async with client.stream('GET', url, headers={'Range': 'bytes=0-3'}) as resp:
-                resp.raise_for_status()
-                cl = resp.headers.get('Content-Length')
-                if cl is None:
-                    # No Content-Length header => assume no range support
-                    return False
-
-                partial_size = int(cl)
-                # Drain only the first chunk, then close to cancel further data
-                async for chunk in resp.aiter_bytes():
-                    break
-
-            # If partial response size differs, server served the requested range
-            return partial_size != full_size
-        except Exception:
-            return False
-
     async def _get_client(self) -> httpx.AsyncClient:
         """
         Create and configure an httpx.AsyncClient per HttpConfigModel.
@@ -63,10 +39,10 @@ class HttpxDownloader(DownloaderProtocol):
             if mapping:
                 proxies = mapping
 
-        timeout = httpx.Timeout(connect=self.config.timeout_connect)
+        # timeout = httpx.Timeout(connect=self.config.timeout_connect)
         return httpx.AsyncClient(
             headers=self.config.headers,
-            timeout=timeout,
+            timeout=self.config.timeout_connect,
             verify=self.config.valid_ssl,
             cookies=self.config.cookies
         )
@@ -93,34 +69,52 @@ class HttpxDownloader(DownloaderProtocol):
     async def get_file_info(self, url: str) -> FileInfoModel:
         try:
             async with await self._get_client() as client:
-                response = await client.head(url)
-                response.raise_for_status()
+                # Request only the first byte to get headers and partial content
+                async with client.stream(
+                    'GET', url, headers={'Range': 'bytes=0-0'}
+                ) as response:
+                    response.raise_for_status()
+                    headers = response.headers
 
-                headers = response.headers
-                # File size
-                size = int(headers.get("Content-Length", 0))
-                # MIME type
-                content_type = headers.get("Content-Type", "")
-                # Unique file identifier (ETag or protocol-specific)
-                file_id = headers.get("ETag")
-                # Range support
-                accept = headers.get("Accept-Ranges", "").lower()
-                resumable = self._is_range_supported(
-                    client, url)  # accept == "bytes"
-                # File name from Content-Disposition or URL path
-                cd = headers.get("Content-Disposition", "")
-                file_name = url.split("/")[-1]
-                if "filename=" in cd:
-                    file_name = cd.split("filename=")[-1].strip('"')
+                    # Determine full file size
+                    content_range = headers.get('Content-Range')
+                    if content_range and '/' in content_range:
+                        full_size = int(content_range.split('/', 1)[1])
+                        resumable = True
+                    else:
+                        full_size = int(headers.get('Content-Length', 0))
+                        resumable = False
+
+                    # Metadata
+                    content_type = headers.get('Content-Type', '')
+                    file_id = headers.get('ETag')
+                    cd = headers.get('Content-Disposition', '')
+                    file_name = url.split('/')[-1]
+                    if 'filename=' in cd:
+                        file_name = cd.split('filename=')[-1].strip('"')
+
+                    # Drain one chunk then close
+                    async for chunk in response.aiter_bytes():
+                        break
+
+                    last_mod = headers.get('Last-Modified')
+                    if last_mod:
+                        try:
+                            date_created = parsedate_to_datetime(last_mod)
+                        except Exception:
+                            date_created = datetime.now(timezone.utc)
+                    else:
+                        date_created = datetime.now(timezone.utc)
 
                 return FileInfoModel(
                     file_name=file_name,
                     content_type=content_type,
-                    file_size=size,
+                    file_size=full_size,
                     file_id=file_id,
                     download_url=str(response.url),
                     transmission_protocol=response.url.scheme,
                     server_accept_ranges=resumable,
+                    file_created_at=date_created
                 )
         except Exception as e:
             raise e
