@@ -23,12 +23,12 @@ RUN set -eux; \
   done
 
 # Generate a valid self-signed certificate (CN=localhost, 1 year)
-RUN mkdir -p /etc/nginx/ssl
 RUN openssl req -x509 -nodes -newkey rsa:2048 \
-    -keyout /etc/nginx/ssl/selfsigned.key \
-    -out /etc/nginx/ssl/selfsigned.crt \
-    -days 365 \
-    -subj "/CN=localhost"
+  -keyout /etc/nginx/ssl/selfsigned.key \
+  -out /etc/nginx/ssl/selfsigned.crt \
+  -days 365 \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost"
 
 # Copy expired cert (valid for 1 day) generated on host
 COPY tests/nginx_tests_config/ssl/expired.crt /etc/nginx/ssl/expired.crt
