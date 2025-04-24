@@ -21,8 +21,9 @@ class URLConfig:
 @dataclass
 class DLManagerConfig:
     urls_config: list[URLConfig] | None = None
-    max_simultaneous_downloads: int | None = None
-    max_connections_per_download: int | None = None
+    abort_on_first_error: bool = False  # improve this name
+    max_simultaneous_downloads: int | None = 10
+    max_connections_per_download: int | None = 5
     auto_start: bool = True
     destination_folder: str | None = None
     destination_handler: object | None = None

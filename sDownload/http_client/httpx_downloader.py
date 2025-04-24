@@ -6,6 +6,7 @@ import httpx
 from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 from sDownload.interfaces.protocols.file_info_model import FileInfoModel
+from sDownload.utils.url_to_file_name import url_to_file_name
 
 
 class HttpxDownloader(DownloaderProtocol):
@@ -75,10 +76,11 @@ class HttpxDownloader(DownloaderProtocol):
                 ) as response:
                     response.raise_for_status()
                     headers = response.headers
+                    status_code = response.status_code
 
                     # Determine full file size
                     content_range = headers.get('Content-Range')
-                    if content_range and '/' in content_range:
+                    if status_code == 206 and content_range and '/' in content_range:
                         full_size = int(content_range.split('/', 1)[1])
                         resumable = True
                     else:
@@ -89,7 +91,7 @@ class HttpxDownloader(DownloaderProtocol):
                     content_type = headers.get('Content-Type', '')
                     file_id = headers.get('ETag')
                     cd = headers.get('Content-Disposition', '')
-                    file_name = url.split('/')[-1]
+                    file_name = url_to_file_name(url)
                     if 'filename=' in cd:
                         file_name = cd.split('filename=')[-1].strip('"')
 
@@ -108,7 +110,7 @@ class HttpxDownloader(DownloaderProtocol):
 
                 return FileInfoModel(
                     file_name=file_name,
-                    content_type=content_type,
+                    content_type=content_type,  # remove
                     file_size=full_size,
                     file_id=file_id,
                     download_url=str(response.url),
@@ -117,4 +119,4 @@ class HttpxDownloader(DownloaderProtocol):
                     file_created_at=date_created
                 )
         except Exception as e:
-            raise e
+            raise e  # create a custom exception here
