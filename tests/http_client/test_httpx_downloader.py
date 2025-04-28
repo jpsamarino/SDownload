@@ -15,7 +15,6 @@ from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 #     print(result2)
 #     print(result3)
 
-
 @pytest.mark.asyncio
 async def test_httpx_get_file_info_common_case(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0)
@@ -75,3 +74,44 @@ async def test_httpx_get_file_info_https_without_valid_ssl(nginx_custom):
         config_ssl = HttpConfigModel(timeout_connect=20.0, valid_ssl=True)
         downloader_ssl = HttpxDownloader(config_ssl)
         await downloader_ssl.get_file_info(f"{nginx_custom['https']}/default/file_100k.bin")
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_full(nginx_custom):
+
+    config = HttpConfigModel(timeout_connect=20.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/default/file_100k.bin"
+    chunks = [chunk async for chunk in downloader.download_chunk(url)]
+    data = b''.join(chunks)
+    assert len(data) == 102400
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_partial(nginx_custom):
+    config = HttpConfigModel(timeout_connect=20.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/default/file_100k.bin"
+    partial = [chunk async for chunk in downloader.download_chunk(url, start_byte=1000, end_byte=1999)]
+    data = b''.join(partial)
+    assert len(data) == 1000
+    full = b''.join([c async for c in downloader.download_chunk(url)])
+    assert data == full[1000:2000]
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_invalid_range(nginx_custom):
+    config = HttpConfigModel(timeout_connect=20.0, valid_ssl=False)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/default/file_100k.bin"
+    with pytest.raises(Exception):
+        _ = [chunk async for chunk in downloader.download_chunk(url, start_byte=200000, end_byte=300000)]
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_invalid_url():
+    config = HttpConfigModel(timeout_connect=1.0, valid_ssl=False)
+    downloader = HttpxDownloader(config)
+    bad_url = "http://localhost:9999/nonexistent.bin"
+    with pytest.raises(Exception):
+        _ = [chunk async for chunk in downloader.download_chunk(bad_url)]
