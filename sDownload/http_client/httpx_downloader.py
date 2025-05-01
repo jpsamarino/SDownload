@@ -67,7 +67,7 @@ class HttpxDownloader(DownloaderProtocol):
         except Exception as e:
             raise e
 
-    async def get_file_info(self, url: str) -> FileInfoModel:
+    async def get_file_info(self, url: str) -> list[FileInfoModel]:
         try:
             async with await self._get_client() as client:
                 # Request only the first byte to get headers and partial content
@@ -88,7 +88,6 @@ class HttpxDownloader(DownloaderProtocol):
                         resumable = False
 
                     # Metadata
-                    content_type = headers.get('Content-Type', '')
                     file_id = headers.get('ETag')
                     cd = headers.get('Content-Disposition', '')
                     file_name = url_to_file_name(url)
@@ -108,15 +107,16 @@ class HttpxDownloader(DownloaderProtocol):
                     else:
                         date_created = datetime.now(timezone.utc)
 
-                return FileInfoModel(
+                return [FileInfoModel(
                     file_name=file_name,
-                    content_type=content_type,  # remove
+                    file_dir=".",
                     file_size=full_size,
                     file_id=file_id,
                     download_url=str(response.url),
                     transmission_protocol=response.url.scheme,
                     server_accept_ranges=resumable,
-                    file_created_at=date_created
-                )
+                    file_created_at=date_created,
+                    protocol_data=dict(headers),
+                )]
         except Exception as e:
             raise e  # create a custom exception here

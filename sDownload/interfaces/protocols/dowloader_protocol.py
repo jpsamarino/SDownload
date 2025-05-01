@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Protocol
+from typing import AsyncIterator, List, Protocol
 from .file_info_model import FileInfoModel
 
 
@@ -33,7 +33,7 @@ class DownloaderProtocol(Protocol):
         """
         ...
 
-    async def get_file_info(self, url: str) -> FileInfoModel:
+    async def get_file_info(self, url: str) -> list[FileInfoModel]:
         """
         Retrieve metadata information about a file from a specified URL.
 

@@ -7,7 +7,7 @@ from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 # async def test_httpx_downloader():
 #     config = HttpConfigModel(timeout_connect=20.0)
 #     downloader = HttpxDownloader(config)
-#     result = await downloader.get_file_info("https://www.anatel.gov.br/dadosabertos/paineis_de_dados/areastarifarias/pgcn.zip")
+#     result_list = await downloader.get_file_info("https://www.anatel.gov.br/dadosabertos/paineis_de_dados/areastarifarias/pgcn.zip")
 #     result2 = await downloader.get_file_info("https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Empresas0.zip")
 #     result3 = await downloader.get_file_info("https://viacep.com.br/ws/01001000/json/")
 #     result4 = await downloader.get_file_info("https://viacep.com.br/ws/01001000/json?aa=20&bb=30")
@@ -19,7 +19,8 @@ from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 async def test_httpx_get_file_info_common_case(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(f"{nginx_custom['http']}/default/file_100k.bin")
+    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/default/file_100k.bin")
+    result = result_list[0]
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
@@ -29,7 +30,8 @@ async def test_httpx_get_file_info_common_case(nginx_custom):
 async def test_httpx_get_file_info_without_range_support(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(f"{nginx_custom['http']}/no_resume/file_100M.bin")
+    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/no_resume/file_100M.bin")
+    result = result_list[0]
     assert result.file_name == "file_100M.bin"
     assert result.file_size == 104857600
     assert result.server_accept_ranges is False
@@ -47,7 +49,8 @@ async def test_httpx_get_file_info_with_wrong_url(nginx_custom):
 async def test_httpx_get_file_info_json_and_data_returns(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(f"{nginx_custom['http']}/json-data")
+    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/json-data")
+    result = result_list[0]
     assert result.file_name == "json_data.bin"
     assert result.server_accept_ranges is False
 
@@ -56,7 +59,8 @@ async def test_httpx_get_file_info_json_and_data_returns(nginx_custom):
 async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(f"{nginx_custom['http']}/no_filename")
+    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/no_filename")
+    result = result_list[0]
     assert result.file_name == "no_filename.bin"
     assert result.file_size == 1048576
 
@@ -65,7 +69,8 @@ async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
 async def test_httpx_get_file_info_https_without_valid_ssl(nginx_custom):
     config = HttpConfigModel(timeout_connect=20.0, valid_ssl=False)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(f"{nginx_custom['https']}/default/file_100k.bin")
+    result_list = await downloader.get_file_info(f"{nginx_custom['https']}/default/file_100k.bin")
+    result = result_list[0]
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
