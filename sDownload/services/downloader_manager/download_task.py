@@ -3,10 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 import time
-from typing import Any, AsyncIterator, Dict, Optional
-from sDownload.interfaces.protocols.dowloader_manager_protocol import DLManagerConfig, URLConfig
+from typing import AsyncIterator, Dict, List, Optional, Tuple
 from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_info_model import FileInfoModel
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 
 
@@ -14,14 +12,21 @@ from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProt
 class ChunkDownloadStats:
     chunk_file_name: str
     start_byte: int
-    end_byte: int
+    end_byte: Optional[int]
     file_size: int
     bytes_downloaded: int = 0
     progress: float = 0.0
     speed_bps: float = 0.0
-    status: str = "pending" | "downloading" | "completed"
+    status: str = "pending"  # pending | downloading | completed | error
     start_time: float = field(default_factory=time.monotonic)
     last_update: float = field(default_factory=time.monotonic)
+
+    def finalize(self):
+        now = time.monotonic()
+        elapsed = now - self.start_time
+        self.progress = 100.0
+        self.speed_bps = self.bytes_downloaded / elapsed if elapsed > 0 else 0
+        self.last_update = now
 
 
 @dataclass
@@ -31,190 +36,201 @@ class DownloadStats:
     progress: float = 0.0
     speed_bps: float = 0.0
     start_time: float = field(default_factory=time.monotonic)
+    last_update: float = field(default_factory=time.monotonic)
+
+    def update(self):
+        now = time.monotonic()
+        elapsed = now - self.start_time
+        self.progress = 100.0 * self.bytes_downloaded / self.file_size
+        self.speed_bps = self.bytes_downloaded / elapsed if elapsed > 0 else 0
+        self.last_update = now
 
 
 @dataclass
 class DownloadConfig:
     file_name: str
-    file_dir: str | None
+    file_dir: Optional[str]
     file_size: int
-    file_id: str | None
+    file_id: Optional[str]
     download_url: str
     file_created_at: datetime
-    protocol_data: dict | None
-    max_connections_per_download: int | None = None
-    max_speed_bytes_per_second: int | None = None
+    protocol_data: Optional[dict]
+    max_connections_per_download: int = 1
+    max_speed_bytes_per_second: float = float("inf")  # bytes/s
 
 
 class DownloadTask:
     def __init__(
-            self,
-            download_config: DownloadConfig,
-            use_chunked_download: bool,
-            downloader_executor: DownloaderProtocol,
-            file_storage_handler: FileStorageProtocol,
-            _logger: logging.Logger,):
-        self._use_chunked_download = use_chunked_download
-        self._downloader_executor = downloader_executor
-        self._file_storage_handler = file_storage_handler
-        self._logger = _logger
-        self._download_config = download_config
-        self._chunks_download_tasks: Dict[str, asyncio.Task] = {}
-        self._chunks_stats: Dict[str, ChunkDownloadStats] = {}
-        self._download_stats: DownloadStats | None = None
-        self._list_ranges_to_download: list[tuple[int, int]] = []
-
-    async def _tracker_async_iterator(
         self,
-        chunk_iterator: AsyncIterator[bytes],
-        stats: ChunkDownloadStats,
-    ) -> AsyncIterator[bytes]:
-        async for chunk in chunk_iterator:
-            stats.bytes_downloaded += len(chunk)
-            yield chunk
-
-    async def _update_chunk_stats_periodically(
-        self,
-        stats: ChunkDownloadStats,
-        stop_event: asyncio.Event,
-        timeout_seconds: float = 1.0,
+        cfg: DownloadConfig,
+        downloader: DownloaderProtocol,
+        storage: FileStorageProtocol,
+        use_chunked_download: bool = True,
+        logger: logging.Logger = logging.getLogger(__name__),
     ):
-        last_bytes_downloaded = stats.bytes_downloaded
+        self._cfg = cfg
+        self._use_chunked_download = use_chunked_download
+        self._downloader = downloader
+        self._storage = storage
+        self._logger = logger
+        self._max_conn = max(1, cfg.max_connections_per_download)
+        self._target_speed = cfg.max_speed_bytes_per_second
+        self._download_stats = DownloadStats(cfg.file_size)
+        self._chunks_stats: Dict[str, ChunkDownloadStats] = {}
+        self._chunks_tasks: Dict[str, asyncio.Task] = {}
+        self._pending: List[Tuple[int, Optional[int]]] = []
+        self._monitor_task: Optional[asyncio.Task] = None
+        self._init_ranges()
 
-        def update_stats():
-            nonlocal last_bytes_downloaded
+    def _init_ranges(self):
+        if not self._use_chunked_download:
+            self._max_conn = 1
+            self._pending.append((0, None))
+            return
+        total, parts = self._cfg.file_size, self._max_conn
+        base, rem = divmod(total, parts)
+        cur = 0
+        for i in range(parts):
+            extra = 1 if i < rem else 0
+            end = cur + base + extra - 1
+            self._pending.append(
+                (cur, end if end < total - 1 else None))  # verificar
+            cur = end + 1
+
+    def _key(self, start_byte: int, end_byte: Optional[int]) -> str:
+        return f"{start_byte}_{end_byte or 'EOF'}"
+
+    async def _tracker(self, it: AsyncIterator[bytes], stats: ChunkDownloadStats):
+        try:
+            async for data in it:
+                stats.bytes_downloaded += len(data)
+                yield data
+        finally:
+            stats.finalize()
+
+    async def _periodic_stats(self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0):
+        prev = stats.bytes_downloaded
+        while not stop.is_set():
             now = time.monotonic()
             elapsed = now - stats.start_time
             stats.progress = 100.0 * stats.bytes_downloaded / stats.file_size
-            stats.speed_bps = (
-                stats.bytes_downloaded - last_bytes_downloaded) / elapsed
-            stats.last_update = now
+            stats.speed_bps = (stats.bytes_downloaded - prev) / \
+                elapsed if elapsed > 0 else 0
+            prev = stats.bytes_downloaded
             self._logger.debug(
-                f"[{stats.chunk_file_name}] {stats.progress:.2f}% - "
-                f"{stats.bytes_downloaded} bytes at {stats.speed_bps:.2f} B/s"
-            )
-            last_bytes_downloaded = stats.bytes_downloaded
+                f"[{stats.chunk_file_name}] {stats.progress:.1f}% @ {stats.speed_bps:.1f} B/s")
+            await asyncio.sleep(interval)
+        stats.finalize()
 
-        while not stop_event.is_set():
-            update_stats()
-            await asyncio.sleep(timeout_seconds)
-
-        update_stats()
-
-    async def _download_chunk_part(self, start_byte: int = 0, end_byte: int = None):
-        chunk_key = self._get_chunk_stats_name(start_byte, end_byte)
-        chunk_name = f"{chunk_key}-{self._download_config.file_name}.sdownload"
-
+    async def _download_chunk(self, start: int, end: Optional[int], max_retries: int = 3):
+        key = self._key(start, end)
+        name = f"{key}_{self._cfg.file_name}.sdownload"
+        end_byte = end if end is not None else self._cfg.file_size - 1
+        file_size = end_byte - start + 1
         stats = ChunkDownloadStats(
-            chunk_file_name=chunk_name,
-            start_byte=start_byte,
+            chunk_file_name=name,
+            start_byte=start,
             end_byte=end_byte,
-            file_size=end_byte - start_byte + 1,
-            status="pending",
+            file_size=file_size,
+            status="pending"
         )
+        self._chunks_stats[key] = stats
 
-        self._chunks_stats[chunk_key] = stats
-        stop_event = asyncio.Event()
+        for attempt in range(1, max_retries + 1):
+            stats.status = "downloading"
+            stop = asyncio.Event()
+            stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
+            try:
+                self._logger.debug(
+                    "[Attempt %s] byte range [%s]-[%s]", attempt, start, end or "EOF")
+                raw_it = self._downloader.download_chunk(
+                    self._cfg.download_url, start, end)
+                tracked = self._tracker(raw_it, stats)
+                await self._storage.save_binary_data(tracked, name)
+                stats.status = "completed"
+                self._logger.info(
+                    "[%s] ending attempt %d", name, attempt)
+                return
 
-        stats_task = asyncio.create_task(
-            self._update_chunk_stats_periodically(stats, stop_event))
+            except Exception as e:
+                stats.status = "error"
+                self._logger.warning(
+                    "[%s] failed attempt %d: %s", name, attempt, e
+                )
+                stats.bytes_downloaded = 0
+                stats.start_time = time.monotonic()
+                stats.last_update = stats.start_time
+                if attempt == max_retries:
+                    self._logger.error(
+                        "Chunk %s failed %d attempts", name, max_retries)
+                    raise
+                await asyncio.sleep(attempt)
 
-        try:
-            chunk_iterator = self._downloader_executor.download_chunk(
-                self._download_config.download_url,
-                start_byte,
-                end_byte,
-            )
+            finally:
+                stop.set()
+                await stats_task
+                del self._chunks_tasks[key]
 
-            tracked_iterator = self._tracker_async_iterator(
-                chunk_iterator, stats)
+    def get_bytes_dowloaded(self) -> int:
+        return sum([s.bytes_downloaded for s in self._chunks_stats.values()]) or 0
 
-            await self._file_storage_handler.save_binary_data(tracked_iterator, chunk_name)
-            stats.status = "completed"
-            self._logger.info(f"[{chunk_name}] download completed")
+    def update_stats(self) -> int:
+        _bytes_downloaded = self.get_bytes_dowloaded()
+        self._download_stats.bytes_downloaded = _bytes_downloaded
+        self._download_stats.update()
 
-        except Exception as e:
-            stats.status = "error"
-            self._logger.error(f"[{chunk_name}] download failed: {e}")
-            raise
-        finally:
-            stop_event.set()
-            await stats_task
+    async def _monitor(self):
+        last_speed = 0.0
+        self.update_stats()
+        cs = 1
+        while self._download_stats.bytes_downloaded < self._cfg.file_size or cs > 0:
+            await asyncio.sleep(2)
+            self.update_stats()
+            cs = len(self._chunks_tasks)
+            if (
+                cs < self._max_conn
+                # and self._target_speed > 0
+                and self._download_stats.speed_bps < self._target_speed  # change it
+                # and self._download_stats.speed_bps > last_speed
+                and self._pending
+            ):
+                start, end = self._pending.pop(0)  # fix
+                task = asyncio.create_task(self._download_chunk(start, end))
+                self._chunks_tasks[self._key(start, end)] = task
+                self._logger.info(
+                    f"new chunk {start}-{end or 'EOF'} started")
+            last_speed = self._download_stats.speed_bps
+        self._logger.info("Monitor task end.")
+        # join all finished FILES  and delete them
 
-    def _get_chunk_stats_name(self, start_byte: int = 0, end_byte: int = None):
-        return f"{start_byte}-{end_byte or 'EOF'}"
-
-    def _verify_chunk_is_running(self, start_byte: int = 0, end_byte: int = None):
-        return self._get_chunk_stats_name(start_byte, end_byte) in self._chunks_stats
-
-    def _get_chunk_stats(self, start_byte: int = 0, end_byte: int = None):
-        return self._chunks_stats.get(self._get_chunk_stats_name(start_byte, end_byte))
-
-    def _get_chunk_task(self, start_byte: int = 0, end_byte: int = None):
-        return self._chunks_download_tasks.get(self._get_chunk_stats_name(start_byte, end_byte))
-
-    async def _download_chunks_sequential(self):
-        for start_byte, end_byte in self._list_ranges_to_download:
-            if self._verify_chunk_is_running(start_byte, end_byte):
-                continue
-            # add task in dict and wait
-            chunk_task = asyncio.create_task(
-                self._download_chunk_part(start_byte, end_byte))
-            self._chunks_download_tasks[self._get_chunk_stats_name(
-                start_byte, end_byte)] = chunk_task
-            await chunk_task
-
-        for start_byte, end_byte in self._list_ranges_to_download:
-            chunk_stats = self._get_chunk_stats(start_byte, end_byte)
-            if chunk_stats.progress < 100.0:  # error
-                chunk_task = self._get_chunk_task(start_byte, end_byte)
-                if chunk_task is None:
-                    chunk_task = asyncio.create_task(
-                        self._download_chunk_part(start_byte, end_byte))
-                    self._chunks_download_tasks[self._get_chunk_stats_name(
-                        start_byte, end_byte)] = chunk_task
-                    await chunk_task
-                else:
-                    await chunk_task
-
-    async def _update_download_stats_periodically(
-        self,
-        stats: ChunkDownloadStats,
-        stop_event: asyncio.Event,
-        timeout_seconds: float = 2.0,
-    ):
-        "it will update download stats periodically and add more chunks if needed"
-        pass
+    async def _watch_dog_verification(self, timeout: int = 10):
+        """
+        each 10 seconds check if all chunks runing if not working stop
+        if not working delete task and put back to pending and retry with only 1 connection
+        """
+        while True:
+            await asyncio.sleep(timeout)
+            for stats in self._chunks_stats.values():
+                if stats.speed_bps == 0 and stats.status == "downloading":
+                    self._max_conn = self._max_conn - 1 if self._max_conn > 1 else 1
+                    self._logger.info(
+                        f"chunk {stats.chunk_file_name} failed")
+                    del self._chunks_tasks[self._key(
+                        stats.start_byte, stats.end_byte)]
+                    # del files in future
+                    self._pending.append(
+                        (stats.start_byte, stats.end_byte))
+                    self._download_stats.bytes_downloaded -= stats.bytes_downloaded
 
     async def start(self):
-        """
-        """
-        total_size = self._download_config.file_size
-        self._download_stats = DownloadStats(file_size=total_size)
-
-        max_conn = self._download_config.max_connections_per_download or 1
-        use_chunks = self._use_chunked_download and max_conn > 1
-
-        chunk_count = max_conn
-        base = total_size // chunk_count
-        remainder = total_size % chunk_count
-        cursor = 0
-        list_ranges_to_download = []
-
-        for i in range(chunk_count):
-            start_byte = cursor
-            extra = 1 if i < remainder else 0
-            end_byte = cursor + base + extra - 1
-            cursor = end_byte + 1
-            list_ranges_to_download.append((start_byte, end_byte))
-
-        # start dowload sequentially
-        asyncio.create_task(self._download_chunks_sequential())
-        # start function to monitor download progress
-
-        self._logger.info(
-            f"Download started with {len(self._chunks_download_tasks)} task(s)"
-        )
+        if not self._pending:
+            return
+        start, end = self._pending.pop(0)
+        first = asyncio.create_task(self._download_chunk(start, end))
+        self._chunks_tasks[self._key(start, end)] = first
+        self._monitor_task = asyncio.create_task(self._monitor())
+        await self._monitor_task
+        self._logger.info("DownloadTask finished.")
 
     async def wait_util_done(self):
         ...
