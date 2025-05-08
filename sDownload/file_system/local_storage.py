@@ -54,3 +54,17 @@ class LocalStorage(FileStorageProtocol):
             )
             files.append(info)
         return files
+
+    async def merge_binary_files(self, source_keys: List[str], dest_key: str) -> None:
+        dest_path = self.storage_dir / dest_key
+        async with aiofiles.open(dest_path, "wb") as dest_file:
+            for key in source_keys:
+                src_path = self.storage_dir / key
+                if not src_path.exists():
+                    raise FileNotFoundError(f"{key} not found in storage")
+                async with aiofiles.open(src_path, "rb") as src_file:
+                    while True:
+                        chunk = await src_file.read(self.chunk_size)
+                        if not chunk:
+                            break
+                        await dest_file.write(chunk)

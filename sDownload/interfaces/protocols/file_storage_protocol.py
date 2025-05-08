@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import Protocol
+from typing import List, Protocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
 
@@ -39,5 +39,15 @@ class FileStorageProtocol(Protocol):
 
         :return: An awaitable that yields a list of FileInfoModel objects
         {key, sizeBytes, created_at}.
+        """
+        ...
+
+    async def merge_binary_files(self, source_keys: List[str], dest_key: str) -> None:
+        """
+        Merge multiple binary files into a single file.
+
+        :param source_keys: List of keys of the source files.
+        :param dest_key: Key of the destination file.
+        :return: An awaitable that completes once the merge is complete.
         """
         ...

@@ -74,3 +74,38 @@ async def test_get_binary_data_not_found(storage: FileStorageProtocol):
     with pytest.raises(FileNotFoundError):
         async for _ in storage.get_binary_data("nope.bin"):
             pass
+
+
+@pytest.mark.asyncio
+async def test_merge_three_parts(storage: LocalStorage):
+    part1 = b"ABC"
+    part2 = b"DEFG"
+    part3 = b"HIJKLM"
+    await storage.save_binary_data("p1.bin", generate_chunks(part1, storage.chunk_size))
+    await storage.save_binary_data("p2.bin", generate_chunks(part2, storage.chunk_size))
+    await storage.save_binary_data("p3.bin", generate_chunks(part3, storage.chunk_size))
+
+    await storage.merge_binary_files(["p1.bin", "p2.bin", "p3.bin"], "merged.bin")
+
+    merged = b""
+    async for chunk in storage.get_binary_data("merged.bin"):
+        merged += chunk
+    assert merged == part1 + part2 + part3
+
+
+@pytest.mark.asyncio
+async def test_merge_overwrites_existing(storage: LocalStorage):
+    existing = b"OLD"
+    await storage.save_binary_data("dest.bin", generate_chunks(existing, storage.chunk_size))
+
+    new1 = b"123"
+    new2 = b"4567"
+    await storage.save_binary_data("n1.bin", generate_chunks(new1, storage.chunk_size))
+    await storage.save_binary_data("n2.bin", generate_chunks(new2, storage.chunk_size))
+
+    await storage.merge_binary_files(["n1.bin", "n2.bin"], "dest.bin")
+
+    merged = b""
+    async for chunk in storage.get_binary_data("dest.bin"):
+        merged += chunk
+    assert merged == new1 + new2
