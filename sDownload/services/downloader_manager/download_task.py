@@ -24,7 +24,7 @@ class ChunkDownloadStats:
     def finalize(self):
         now = time.monotonic()
         elapsed = now - self.start_time
-        self.progress = 100.0
+        self.progress = 100.0 * self.bytes_downloaded / self.file_size
         self.speed_bps = self.bytes_downloaded / elapsed if elapsed > 0 else 0
         self.last_update = now
 
@@ -144,9 +144,9 @@ class DownloadTask:
                 self._logger.debug(
                     "[Attempt %s] byte range [%s]-[%s]", attempt, start, end or "EOF")
                 raw_it = self._downloader.download_chunk(
-                    self._cfg.download_url, start, end)
+                    self._cfg.download_url, start, end_byte)
                 tracked = self._tracker(raw_it, stats)
-                await self._storage.save_binary_data(tracked, name)
+                await self._storage.save_binary_data(name, tracked)
                 stats.status = "completed"
                 self._logger.info(
                     "[%s] ending attempt %d", name, attempt)
@@ -202,8 +202,14 @@ class DownloadTask:
             last_speed = self._download_stats.speed_bps
         self._logger.info("Monitor task end.")
         # join all finished FILES  and delete them
+        file_names = [s.chunk_file_name for s in self._chunks_stats.values()]
+        await self._storage.merge_binary_files(file_names, self._cfg.file_name)
+        await asyncio.sleep(1)  # await system data unlock to delete
+        for file_name in file_names:
+            await self._storage.delete_data(file_name)
 
     async def _watch_dog_verification(self, timeout: int = 10):
+        # make it work
         """
         each 10 seconds check if all chunks runing if not working stop
         if not working delete task and put back to pending and retry with only 1 connection
