@@ -54,9 +54,13 @@ class HttpxDownloader(DownloaderProtocol):
         start_byte: int = 0,
         end_byte: Optional[int] = None,
     ) -> AsyncIterator[bytes]:
+
         headers: dict[str, str] = {}
-        if end_byte is not None:
+
+        if 0 <= start_byte <= end_byte:
             headers["Range"] = f"bytes={start_byte}-{end_byte}"
+        elif start_byte >= 0:
+            headers["Range"] = f"bytes={start_byte}-"
         try:
             async with await self._get_client() as client:
                 async with client.stream("GET", url, headers=headers) as response:
