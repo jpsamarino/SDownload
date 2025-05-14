@@ -15,6 +15,7 @@ class ChunkDownloadStats:
     end_byte: Optional[int]
     file_size: int
     bytes_downloaded: int = 0
+    qt_bytes_last_update: int = 0
     progress: float = 0.0
     speed_bps: float = 0.0
     status: str = "pending"  # pending | downloading | completed | error
@@ -22,28 +23,38 @@ class ChunkDownloadStats:
     last_update: float = field(default_factory=time.monotonic)
     target_speed_bps: float = float("inf")
 
-    def finalize(self):
+    def update(self):
+        qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
+        self.qt_bytes_last_update = self.bytes_downloaded
         now = time.monotonic()
-        elapsed = now - self.start_time
-        self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.speed_bps = self.bytes_downloaded / elapsed if elapsed > 0 else 0
+        time_elapsed = now - self.last_update
         self.last_update = now
+        self.progress = 100.0 * self.bytes_downloaded / self.file_size
+        self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0
 
 
 @dataclass
 class DownloadStats:
     file_size: int
     bytes_downloaded: int = 0
+    qt_bytes_last_update: int = 0
     progress: float = 0.0
     speed_bps: float = 0.0
+    avg_speed_bps: float = 0.0
     start_time: float = field(default_factory=time.monotonic)
     last_update: float = field(default_factory=time.monotonic)
 
     def update(self):
         now = time.monotonic()
-        elapsed = now - self.start_time
+        time_elapsed_avg = now - self.start_time
         self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.speed_bps = self.bytes_downloaded / elapsed if elapsed > 0 else 0
+        self.avg_speed_bps = self.bytes_downloaded / \
+            time_elapsed_avg if time_elapsed_avg > 0 else 0
+        qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
+        self.qt_bytes_last_update = self.bytes_downloaded
+        time_elapsed_period = now - self.last_update
+        self.speed_bps = qt_bytes_elapsed / \
+            time_elapsed_period if time_elapsed_period > 0 else 0
         self.last_update = now
 
 
@@ -110,6 +121,7 @@ class DownloadTask:
                 stats.bytes_downloaded += qt_bytes
                 accumulated_bytes += qt_bytes
                 yield data
+                # to control the dl speed based on target speed
                 if accumulated_bytes > stats.target_speed_bps:
                     time_elapsed = time.monotonic() - start_time
                     time_expected = accumulated_bytes / stats.target_speed_bps
@@ -119,22 +131,20 @@ class DownloadTask:
                     accumulated_bytes = 0
 
         finally:
-            stats.finalize()
+            stats.update()
 
     async def _periodic_stats(self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0):
-        prev = stats.bytes_downloaded
-        while not stop.is_set():  # 1mb/s  2mb
-            _qt_bytes_elapsed = stats.bytes_downloaded - prev
-            prev = stats.bytes_downloaded
-            now = time.monotonic()
-            _time_elapsed = now - stats.last_update
-            stats.last_update = now
-            stats.progress = 100.0 * stats.bytes_downloaded / stats.file_size
-            stats.speed_bps = _qt_bytes_elapsed / _time_elapsed if _time_elapsed > 0 else 0
+        while not stop.is_set():
+            stats.update()
             self._logger.debug(
-                f"[{stats.chunk_file_name}] {stats.progress:.1f}% @ {stats.speed_bps/(1024*1024):.2f} MB/s - added {_qt_bytes_elapsed} bytes in {_time_elapsed:.2f} seconds - limit {stats.target_speed_bps/(1024*1024):.2f} MB/s")
+                "[%s] %.1f%% @ %.2f MB/s - limit %.2f MB/s",
+                stats.chunk_file_name,
+                stats.progress,
+                stats.speed_bps / (1024 * 1024),
+                stats.target_speed_bps / (1024 * 1024)
+            )
             await asyncio.sleep(interval)
-        stats.finalize()
+        stats.update()
 
     async def _download_chunk(self, start: int, end: Optional[int], max_retries: int = 3) -> str:
         key = self._key(start, end)
@@ -199,38 +209,47 @@ class DownloadTask:
 
     async def _dl_controller(self, timeout: float = 2):
         self._update_stats()
-        cs = 1
-        self._set_speed_per_chunk(self._target_speed/cs)
-        while self._download_stats.bytes_downloaded < self._cfg.file_size or cs > 0:
-            done_tasks, _ = await asyncio.wait(
+        self._set_speed_per_chunk(self._target_speed)
+
+        while (
+            self._download_stats.bytes_downloaded < self._cfg.file_size
+            or self._chunks_tasks
+        ):
+            done, _ = await asyncio.wait(
                 list(self._chunks_tasks.values()),
                 timeout=timeout,
-                return_when=asyncio.FIRST_COMPLETED
+                return_when=asyncio.FIRST_COMPLETED,
             )
-            for task_to_delete in done_tasks:
-                key = await task_to_delete
-                del self._chunks_tasks[key]
+
+            for task in done:
+                try:
+                    key = task.result()
+                    del self._chunks_tasks[key]
+                except Exception as e:
+                    self._logger.warning(
+                        "Download task failed: %s", e, exc_info=True)
 
             if (
-                cs < self._max_conn
-                # and self._target_speed > 0
-                and self._download_stats.speed_bps < self._target_speed  # change it
-                # and self._download_stats.speed_bps > last_speed
+                len(self._chunks_tasks) < self._max_conn
+                and self._download_stats.speed_bps < self._target_speed
                 and self._pending
             ):
                 self._start_next_chunk()
 
             self._update_stats()
-            cs = len(self._chunks_tasks)
-            self._set_speed_per_chunk(self._target_speed/cs)
+            connections = max(len(self._chunks_tasks), 1)
+            self._set_speed_per_chunk(self._target_speed / connections)
 
         elapsed = time.monotonic() - self._download_stats.start_time
         final_speed = self._download_stats.bytes_downloaded / elapsed
-        self._logger.info(f"Downloaded file: {self._cfg.file_name}")
-        self._logger.info(f"Downloaded size: {self._cfg.file_size}")
-        self._logger.info(f"Downloaded in {elapsed:.2f} seconds.")
-        self._logger.info(f"Downloaded at {final_speed/(1024*1024):.2f} MB/s.")
-        self._logger.info("subtask to [%s] finished.", self._cfg.file_name)
+        self._logger.info(
+            "Finished downloading %s | size: %d bytes | time: %.2f sec | avg speed: %.2f MB/s",
+            self._cfg.file_name,
+            self._cfg.file_size,
+            elapsed,
+            final_speed / (1024 * 1024),
+        )
+
         await self._join_all_files()
 
     def _start_next_chunk(self):
@@ -244,7 +263,6 @@ class DownloadTask:
         file_names = [s.chunk_file_name for s in self._chunks_stats.values()]
         await self._storage.merge_binary_files(file_names, self._cfg.file_name)
         if delete_temp_files:
-            await asyncio.sleep(1)  # await system data unlock to delete
             for file_name in file_names:
                 await self._storage.delete_data(file_name)
 
