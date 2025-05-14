@@ -103,24 +103,20 @@ class DownloadTask:
 
     async def _tracker(self, it: AsyncIterator[bytes], stats: ChunkDownloadStats):
         try:
-            time_to_mesure_speed = time.monotonic()
-            qt_bytes_per_second = 0
+            start_time = time.monotonic()
+            accumulated_bytes = 0
             async for data in it:
                 qt_bytes = len(data)
                 stats.bytes_downloaded += qt_bytes
-                qt_bytes_per_second += qt_bytes
+                accumulated_bytes += qt_bytes
                 yield data
-                if qt_bytes_per_second > stats.target_speed_bps:
-                    now = time.monotonic()
-                    time_elapsed = now - time_to_mesure_speed
-                    _real_speed = qt_bytes_per_second / time_elapsed
-                    if _real_speed > stats.target_speed_bps:
-                        time_expected = qt_bytes_per_second / stats.target_speed_bps
-                        time_to_wait = time_expected - time_elapsed
-                        await asyncio.sleep(min(1, time_to_wait))
-
-                    time_to_mesure_speed = now
-                    qt_bytes_per_second = 0
+                if accumulated_bytes > stats.target_speed_bps:
+                    time_elapsed = time.monotonic() - start_time
+                    time_expected = accumulated_bytes / stats.target_speed_bps
+                    if time_elapsed < time_expected:
+                        await asyncio.sleep(min(1, time_expected - time_elapsed))
+                    start_time = time.monotonic()
+                    accumulated_bytes = 0
 
         finally:
             stats.finalize()
@@ -136,7 +132,7 @@ class DownloadTask:
             stats.progress = 100.0 * stats.bytes_downloaded / stats.file_size
             stats.speed_bps = _qt_bytes_elapsed / _time_elapsed if _time_elapsed > 0 else 0
             self._logger.debug(
-                f"[{stats.chunk_file_name}] {stats.progress:.1f}% @ {stats.speed_bps/(1024*1024):.2f} MB/s - added {_qt_bytes_elapsed} bytes in {_time_elapsed:.2f} seconds")
+                f"[{stats.chunk_file_name}] {stats.progress:.1f}% @ {stats.speed_bps/(1024*1024):.2f} MB/s - added {_qt_bytes_elapsed} bytes in {_time_elapsed:.2f} seconds - limit {stats.target_speed_bps/(1024*1024):.2f} MB/s")
             await asyncio.sleep(interval)
         stats.finalize()
 
