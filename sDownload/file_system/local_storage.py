@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from typing import AsyncIterator, List
@@ -68,3 +69,5 @@ class LocalStorage(FileStorageProtocol):
                         if not chunk:
                             break
                         await dest_file.write(chunk)
+            await dest_file.flush()
+            await asyncio.sleep(0.5)  # await system data unlock
