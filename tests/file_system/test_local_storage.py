@@ -125,7 +125,6 @@ async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStora
     await storage.save_binary_data(file_name, generate_chunks(data, storage.chunk_size))
     await storage.shrink_file_to(file_name, 15)
 
-    # arquivo não deve ter sido alterado
     merged = b""
     async for chunk in storage.get_binary_data(file_name):
         merged += chunk
