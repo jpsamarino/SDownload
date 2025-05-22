@@ -34,13 +34,16 @@ class LocalStorage(FileStorageProtocol):
         async with aiofiles.open(path, "wb") as f:
             async for chunk in data:
                 await f.write(chunk)
+            await f.flush()
+        await asyncio.sleep(0.5)
 
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
         try:
             path.unlink()
-        except FileNotFoundError:
-            pass
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"{key} not found in storage: {path}") from e
 
     async def list_data(self) -> List[FileSystemInfoModel]:
         files: List[FileSystemInfoModel] = []
