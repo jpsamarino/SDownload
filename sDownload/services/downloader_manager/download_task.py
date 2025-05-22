@@ -240,6 +240,8 @@ class DownloadTask:
             or self._chunks_tasks
         ):
             await self._pause_event.wait()
+            await self._watch_dog()
+
             self._logger.info("_dl_controller loop")
 
             if self._chunks_tasks.keys():
@@ -256,9 +258,14 @@ class DownloadTask:
                     except Exception as e:
                         self._logger.warning(
                             "Download task failed: %s", e, exc_info=True)
+
+            elif (not self._pending):
+                self._logger.info("Possible error: _dl_controller")
+
             else:
                 self._logger.info(
                     f"_dl_controller no chunks tasks qt task: {len(_not_done)}/{len(self._chunks_tasks)}")
+                await asyncio.sleep(timeout)
 
             qt_connections = len(self._chunks_tasks)
 
@@ -302,10 +309,16 @@ class DownloadTask:
 
     async def _delete_all_temp_files(self):
         self._logger.info("_delete_all_temp_files")
+        files_to_delete = [
+            s.chunk_file_name for s in self._chunks_stats.values()]
+        files_in_storage = await self._storage.list_data()
+        files_to_delete_in_storage = [
+            s for s in files_to_delete if s in files_in_storage]
         delete_tasks = [
-            self._storage.delete_data(s.chunk_file_name)
-            for s in self._chunks_stats.values()
+            self._storage.delete_data(s)
+            for s in files_to_delete_in_storage
         ]
+        self._logger.info(files_to_delete)
         await asyncio.gather(*delete_tasks)
 
     async def _join_all_files(self, delete_temp_files: bool = True):
@@ -314,74 +327,28 @@ class DownloadTask:
         if delete_temp_files:
             await self._delete_all_temp_files()
 
-    async def _watch_dog_runtime(self, stop: asyncio.Event, timeout: int = 3):
-        try:
-            only_one_time = True
-            now = time.monotonic()
-            while not stop.is_set():
-                await asyncio.sleep(timeout)
-                restart_dl = False
-
-                for _, stats in list(self._chunks_stats.items()):
-                    if (stats.status == "downloading" and stats.speed_bps == 0) or stats.status == "error":
-
-                        if (now - stats.last_update) > 10:
-                            restart_dl = True
-                            self._logger.info(
-                                f"[WacthDog] chunk {stats.chunk_file_name} entered reason {stats.status} , speed {stats.speed_bps}")
-                            break
-
-            # if restart_dl and only_one_time:
-            #         # for teste
-            #         # await asyncio.sleep(20)  # for test
-            #         restart_dl = True
-            #         only_one_time = True
-
-            if restart_dl and only_one_time:
-                for key_n, content in self._chunks_stats.items():
-                    self._logger.info(f"[Watchdog] {key_n} {content}")
-                self._logger.info("[Watchdog] Init delete all taks")
-                only_one_time = False
-                self._pause_event.clear()
-                await asyncio.sleep(5)
-                self._logger.info("[Watchdog] await 5 seconds")
-                for key_n, task in self._chunks_tasks.items():
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        self._logger.info(
-                            f"[Watchdog] {key_n} Chunk task cancelled.")
-                        self._logger.info(
-                            "[Watchdog] Chunk task %s cancelled.", key_n)
+    async def _delete_all_tasks(self):
+        for key_n, task in self._chunks_tasks.items():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
                 self._logger.info(
-                    "[Watchdog] deleted all tasks  waiting 20 seconds")
-                self._max_conn = 1
-                self._chunks_tasks.clear()
-                await asyncio.sleep(0)
-                # p = psutil.Process()
-                # self._logger.info("Handles abertos: %s", [
-                #                   f.path for f in p.open_files()])
-                await self._delete_all_temp_files()
-                self._chunks_stats.clear()
-                self._download_stats = DownloadStats(self._cfg.file_size)
-                self._pending = []
-                self._init_ranges()
-                self._logger.warning(
-                    "[Watchdog] Reducing max connections to %s and restarting download", self._max_conn
-                )
-                self._logger.info("[Watchdog] restart download")
-                self._start_next_chunk()
-                self._pause_event.set()
+                    "Chunk task %s cancelled.", key_n)
+        self._chunks_tasks.clear()
+        await self._delete_all_temp_files()
+        self._chunks_stats.clear()
 
-            elif restart_dl:
-                raise Exception("dowload error, aborting")
+    def _start_download(self, connections: int = 1):
+        self._max_conn = connections
+        self._download_stats = DownloadStats(self._cfg.file_size)
+        self._init_ranges()
+        self._logger.warning(
+            "Starting download with %s connections", self._max_conn
+        )
+        self._start_next_chunk()
 
-        except Exception as e:
-            self._logger.error(
-                f"[Watchdog] Unexpected error: {e}", exc_info=True)
-
-    async def _watch_dog_verification(self, timeout_without_update: int = 6):
+    async def _watch_dog(self, timeout_without_update: int = 3):
         try:
             now = time.monotonic()
             restart_dl = False
@@ -396,35 +363,21 @@ class DownloadTask:
 
             if restart_dl and (not self._recovery_mode):
                 self._recovery_mode = True
-                for key_n, content in self._chunks_stats.items():
-                    self._logger.info(f"[Watchdog] {key_n} {content}")
-                for key_n, task in self._chunks_tasks.items():
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        self._logger.info(
-                            "[Watchdog] Chunk task %s cancelled.", key_n)
-                self._logger.info(
-                    "[Watchdog] deleted all tasks  waiting 20 seconds")
-                self._max_conn = 1
-                self._chunks_tasks.clear()
-                await self._delete_all_temp_files()
-                self._chunks_stats.clear()
-                self._download_stats = DownloadStats(self._cfg.file_size)
-                self._init_ranges()
-                self._logger.warning(
-                    "[Watchdog] Reducing max connections to %s and restarting download", self._max_conn
-                )
-                self._logger.info("[Watchdog] restart download")
-                self._start_next_chunk()
+                await self._delete_all_tasks()
+                # await to avoid some server blocks system
+                await asyncio.sleep(5)
+                self._start_download(connections=1)
 
             elif restart_dl:
-                raise Exception("dowload error, aborting")
+                await self._delete_all_tasks()
+                self._logger.info("Restarting download in 120 seconds")
+                await asyncio.sleep(120)
+                self._start_download(connections=1)
 
         except Exception as e:
             self._logger.error(
                 f"[Watchdog] Unexpected error: {e}", exc_info=True)
+            raise e
 
     def start(self):
         self._logger.info("subtask to [%s] started.", self._cfg.file_name)
