@@ -8,6 +8,7 @@ class DownloaderProtocol(Protocol):
             url: str,
             start_byte: int = 0,
             end_byte: int = None,
+            file_id: str = None
     ) -> AsyncIterator[bytes]:
         """
         Download a chunk of data from a specified URL.
