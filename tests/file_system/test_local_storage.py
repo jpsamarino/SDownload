@@ -109,3 +109,37 @@ async def test_merge_overwrites_existing(storage: LocalStorage):
     async for chunk in storage.get_binary_data("dest.bin"):
         merged += chunk
     assert merged == new1 + new2
+
+
+@pytest.mark.asyncio
+async def test_shrink_file_to_file_not_found(storage: LocalStorage):
+    with pytest.raises(FileNotFoundError):
+        await storage.shrink_file_to("no_such_file.txt", 10)
+
+
+@pytest.mark.asyncio
+async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStorage):
+
+    file_name = "testfile.bin"
+    data = b"1234567890"
+    await storage.save_binary_data(file_name, generate_chunks(data, storage.chunk_size))
+    await storage.shrink_file_to(file_name, 15)
+
+    # arquivo não deve ter sido alterado
+    merged = b""
+    async for chunk in storage.get_binary_data(file_name):
+        merged += chunk
+    assert merged == data
+
+
+@pytest.mark.asyncio
+async def test_shrink_file_to_truncates_correctly(storage: LocalStorage):
+    file_name = "file_to_truncate.bin"
+    data = b"abcdefghij"
+    await storage.save_binary_data(file_name, generate_chunks(data, storage.chunk_size))
+    await storage.shrink_file_to(file_name, 6)
+
+    merged = b""
+    async for chunk in storage.get_binary_data(file_name):
+        merged += chunk
+    assert merged == b"abcdef"

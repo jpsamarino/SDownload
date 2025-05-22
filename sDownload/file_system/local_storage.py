@@ -74,3 +74,18 @@ class LocalStorage(FileStorageProtocol):
                         await dest_file.write(chunk)
             await dest_file.flush()
             await asyncio.sleep(0.5)  # await system data unlock
+
+    async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
+        path = self.storage_dir / key
+        if not path.exists():
+            raise FileNotFoundError(f"{key} not found in storage")
+
+        current_size = path.stat().st_size
+        if target_size_bytes >= current_size:
+            return
+
+        def do_truncate():
+            with path.open("rb+") as f:
+                f.truncate(target_size_bytes)
+
+        await asyncio.to_thread(do_truncate)

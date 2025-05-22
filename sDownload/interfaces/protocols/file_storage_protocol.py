@@ -51,3 +51,13 @@ class FileStorageProtocol(Protocol):
         :return: An awaitable that completes once the merge is complete.
         """
         ...
+
+    async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
+        """
+        Shrink a file to a specific size.
+
+        :param key: Key of the file to shrink.
+        :param target_size_bytes: Target size in bytes.
+        :return: An awaitable that completes once the shrink is complete.
+        """
+        ...
