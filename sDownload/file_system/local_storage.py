@@ -15,7 +15,6 @@ class LocalStorage(FileStorageProtocol):
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-
         self.chunk_size = chunk_size
 
     async def get_binary_data(self, key: str) -> AsyncIterator[bytes]:
@@ -54,7 +53,7 @@ class LocalStorage(FileStorageProtocol):
             info = FileSystemInfoModel(
                 key=path.name,
                 size_bytes=stat.st_size,
-                created_at=datetime.fromtimestamp(stat.st_birthtime),
+                created_at=datetime.fromtimestamp(stat.st_ctime),
             )
             files.append(info)
         return files
