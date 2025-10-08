@@ -1,5 +1,4 @@
 from collections.abc import AsyncIterable
-from pathlib import Path
 from typing import Protocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
@@ -12,12 +11,10 @@ class FileStorageProtocol(Protocol):
 
         :param key: Identifier of the stored data.
         :return: Async iterator of byte chunks.
-        """ 
+        """
         ...
 
-    async def save_binary_data(
-        self, key: str, data: AsyncIterable[bytes]
-    ) -> None:
+    async def save_binary_data(self, key: str, data: AsyncIterable[bytes]) -> None:
         """
         Save binary data (e.g., files) to the storage.
 
