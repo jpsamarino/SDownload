@@ -1,20 +1,22 @@
-from collections.abc import AsyncIterator
-from typing import List, Protocol
+from collections.abc import AsyncIterable
+from pathlib import Path
+from typing import Protocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
 
 class FileStorageProtocol(Protocol):
-    async def get_binary_data(self, key: str) -> AsyncIterator[bytes]:
+
+    def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         """
         Retrieve binary data as an asynchronous stream (in chunks).
 
         :param key: Identifier of the stored data.
         :return: Async iterator of byte chunks.
-        """
+        """ 
         ...
 
     async def save_binary_data(
-        self, key: str, data: AsyncIterator[bytes]
+        self, key: str, data: AsyncIterable[bytes]
     ) -> None:
         """
         Save binary data (e.g., files) to the storage.
@@ -42,7 +44,7 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
-    async def merge_binary_files(self, source_keys: List[str], dest_key: str) -> None:
+    async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         """
         Merge multiple binary files into a single file.
 

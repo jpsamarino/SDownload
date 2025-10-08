@@ -1,7 +1,7 @@
 import asyncio
+from collections.abc import AsyncIterable, AsyncIterator
 from pathlib import Path
 from datetime import datetime
-from typing import AsyncIterator, List
 import aiofiles
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
@@ -17,7 +17,7 @@ class LocalStorage(FileStorageProtocol):
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.chunk_size = chunk_size
 
-    async def get_binary_data(self, key: str) -> AsyncIterator[bytes]:
+    async def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         path = self.storage_dir / key
         if not path.exists():
             raise FileNotFoundError(f"{key} not found in storage")
@@ -28,7 +28,7 @@ class LocalStorage(FileStorageProtocol):
                     break
                 yield chunk
 
-    async def save_binary_data(self, key: str, data: AsyncIterator[bytes]) -> None:
+    async def save_binary_data(self, key: str, data: AsyncIterable[bytes]) -> None:
         path = self.storage_dir / key
         async with aiofiles.open(path, "wb") as f:
             async for chunk in data:
@@ -44,8 +44,8 @@ class LocalStorage(FileStorageProtocol):
             raise FileNotFoundError(
                 f"{key} not found in storage: {path}") from e
 
-    async def list_data(self) -> List[FileSystemInfoModel]:
-        files: List[FileSystemInfoModel] = []
+    async def list_data(self) -> list[FileSystemInfoModel]:
+        files: list[FileSystemInfoModel] = []
         for path in self.storage_dir.iterdir():
             if not path.is_file():
                 continue
@@ -58,7 +58,7 @@ class LocalStorage(FileStorageProtocol):
             files.append(info)
         return files
 
-    async def merge_binary_files(self, source_keys: List[str], dest_key: str) -> None:
+    async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         dest_path = self.storage_dir / dest_key
         async with aiofiles.open(dest_path, "wb") as dest_file:
             for key in source_keys:
