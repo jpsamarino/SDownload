@@ -1,19 +1,20 @@
-from typing import AsyncIterator, List, Protocol
+from collections.abc import AsyncIterable
+from typing import Protocol
 from .file_info_model import FileInfoModel
 
 
 class DownloaderProtocol(Protocol):
-    async def download_chunk(
-            self,
-            url: str,
-            start_byte: int = 0,
-            end_byte: int = None,
-            file_id: str = None
-    ) -> AsyncIterator[bytes]:
+    def download_chunk(
+        self,
+        url: str,
+        start_byte: int = 0,
+        end_byte: int | None = None,
+        file_id: str | None = None,
+    ) -> AsyncIterable[bytes]:
         """
         Download a chunk of data from a specified URL.
 
-        This method allows downloading large files in smaller, manageable chunks. It 
+        This method allows downloading large files in smaller, manageable chunks. It
         supports specifying the byte range to download, as well as retrying on failure.
 
         Args:
@@ -38,14 +39,14 @@ class DownloaderProtocol(Protocol):
         """
         Retrieve metadata information about a file from a specified URL.
 
-        This method fetches details about a file, such as its name, size, content type, 
+        This method fetches details about a file, such as its name, size, content type,
         and other relevant information, without downloading the actual file.
 
         Args:
             url (str): The URL from which to fetch the file's metadata.
 
         Returns:
-            FileInfoModel: A `FileInfoModel` instance containing the file's metadata 
+            FileInfoModel: A `FileInfoModel` instance containing the file's metadata
             (name, size, content type, etc.).
 
         Raises:

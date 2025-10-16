@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
@@ -7,57 +6,11 @@ import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple
 from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-# import psutil  # delete later
-
-
-@dataclass
-class ChunkDownloadStats:
-    chunk_file_name: str
-    start_byte: int
-    end_byte: Optional[int]
-    file_size: int
-    bytes_downloaded: int = 0
-    qt_bytes_last_update: int = 0
-    progress: float = 0.0
-    speed_bps: float = 0.0
-    status: str = "pending"  # pending | downloading | completed | error
-    start_time: float = field(default_factory=time.monotonic)
-    last_update: float = field(default_factory=time.monotonic)
-    target_speed_bps: float = float("inf")
-
-    def update(self):
-        qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
-        self.qt_bytes_last_update = self.bytes_downloaded
-        now = time.monotonic()
-        time_elapsed = now - self.last_update
-        self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0
-        self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
-
-
-@dataclass
-class DownloadStats:
-    file_size: int
-    bytes_downloaded: int = 0
-    qt_bytes_last_update: int = 0
-    progress: float = 0.0
-    speed_bps: float = 0.0
-    avg_speed_bps: float = 0.0
-    start_time: float = field(default_factory=time.monotonic)
-    last_update: float = field(default_factory=time.monotonic)
-
-    def update(self):
-        now = time.monotonic()
-        time_elapsed_avg = now - self.start_time
-        self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.avg_speed_bps = self.bytes_downloaded / \
-            time_elapsed_avg if time_elapsed_avg > 0 else 0
-        qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
-        self.qt_bytes_last_update = self.bytes_downloaded
-        time_elapsed_period = now - self.last_update
-        self.speed_bps = qt_bytes_elapsed / \
-            time_elapsed_period if time_elapsed_period > 0 else 0
-        self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
+from sDownload.services.downloader_manager.download_stats_models import (
+    ChunkDownloadStats,
+    DownloadStats,
+    EDownloadStatus,
+)
 
 
 @dataclass
@@ -124,7 +77,7 @@ class DownloadTask:
             accumulated_bytes = 0
             async for data in it:
                 qt_bytes = len(data)
-                stats.bytes_downloaded += qt_bytes
+                stats.add_qt_bytes_downloaded(qt_bytes)
                 accumulated_bytes += qt_bytes
                 yield data
                 if stats.target_speed_bps and accumulated_bytes > stats.target_speed_bps:
@@ -166,14 +119,13 @@ class DownloadTask:
             start_byte=start,
             end_byte=end_byte,
             file_size=file_size,
-            status="pending",
             target_speed_bps=self._target_speed*0.1  # mudar para 1 está 0.1 para testes
         )
         self._chunks_stats[key] = stats
 
         for attempt in range(1, max_retries + 1):
             self._logger.info("_download_chunk loop")
-            stats.status = "downloading"
+            stats.set_status(EDownloadStatus.DOWNLOADING)
             stop = asyncio.Event()
             stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
             try:
@@ -183,13 +135,13 @@ class DownloadTask:
                     self._cfg.download_url, start, end_byte)
                 tracked = self._tracker(raw_it, stats)
                 await self._storage.save_binary_data(name, tracked)
-                stats.status = "completed"
+                stats.set_status(EDownloadStatus.COMPLETED)
                 self._logger.info(
                     "[%s] ending attempt %s", name, attempt)
 
             except asyncio.CancelledError:
                 self._logger.info("_download_chunk cancelled - %s", name)
-                stats.status = "cancelled"
+                stats.set_status(EDownloadStatus.CANCELLED)
                 self._logger.warning(
                     "[%s] download cancelled on attempt %s", name, attempt)
                 # stop.set()
@@ -197,7 +149,7 @@ class DownloadTask:
                 raise
 
             except Exception as e:
-                stats.status = "error"
+                stats.set_status(EDownloadStatus.ERROR)
                 self._logger.warning(
                     "[%s] failed attempt %s: %s", name, attempt, e
                 )
@@ -221,7 +173,7 @@ class DownloadTask:
     def _update_stats(self) -> int:
         self._logger.info("_update_stats loop")
         _bytes_downloaded = self._get_bytes_dowloaded()
-        self._download_stats.bytes_downloaded = _bytes_downloaded
+        self._download_stats.set_bytes_downloaded(_bytes_downloaded)
         self._download_stats.update()
 
     def _set_speed_per_chunk(self, speed: float) -> None:
@@ -311,9 +263,11 @@ class DownloadTask:
         self._logger.info("_delete_all_temp_files")
         files_to_delete = [
             s.chunk_file_name for s in self._chunks_stats.values()]
-        files_in_storage = await self._storage.list_data()
+        files_names_in_storage = [
+            s.key for s in await self._storage.list_data()]
         files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_in_storage]
+            s for s in files_to_delete if s in files_names_in_storage]
+        self._logger.info(files_to_delete_in_storage)
         delete_tasks = [
             self._storage.delete_data(s)
             for s in files_to_delete_in_storage
@@ -354,7 +308,8 @@ class DownloadTask:
             restart_dl = False
 
             for _, stats in list(self._chunks_stats.items()):
-                if (stats.status == "downloading" and stats.speed_bps == 0) or stats.status == "error":
+                if ((stats.status == EDownloadStatus.DOWNLOADING and stats.speed_bps == 0)
+                        or stats.status == EDownloadStatus.ERROR):
                     if (now - stats.last_update) > timeout_without_update:
                         restart_dl = True
                         self._logger.info(
