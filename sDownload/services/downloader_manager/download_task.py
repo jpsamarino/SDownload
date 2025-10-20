@@ -64,8 +64,7 @@ class DownloadTask:
         for i in range(parts):
             extra = 1 if i < rem else 0
             end = cur + base + extra - 1
-            self._pending.append(
-                (cur, end if end < total - 1 else None))  # verificar
+            self._pending.append((cur, end if end < total - 1 else None))  # verificar
             cur = end + 1
 
     def _key(self, start_byte: int, end_byte: Optional[int]) -> str:
@@ -80,7 +79,10 @@ class DownloadTask:
                 stats.add_qt_bytes_downloaded(qt_bytes)
                 accumulated_bytes += qt_bytes
                 yield data
-                if stats.target_speed_bps and accumulated_bytes > stats.target_speed_bps:
+                if (
+                    stats.target_speed_bps
+                    and accumulated_bytes > stats.target_speed_bps
+                ):
                     time_elapsed = time.monotonic() - start_time
                     time_expected = accumulated_bytes / stats.target_speed_bps
                     if time_elapsed < time_expected:
@@ -95,7 +97,9 @@ class DownloadTask:
             except (RuntimeError, AttributeError):
                 pass
 
-    async def _periodic_stats(self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0):
+    async def _periodic_stats(
+        self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0
+    ):
         while not stop.is_set():
             self._logger.info("_periodic_stats loop")
             stats.update()
@@ -104,12 +108,14 @@ class DownloadTask:
                 stats.chunk_file_name,
                 stats.progress,
                 stats.speed_bps / (1024 * 1024),
-                stats.target_speed_bps / (1024 * 1024)
+                stats.target_speed_bps / (1024 * 1024),
             )
             await asyncio.sleep(interval)
         stats.update()
 
-    async def _download_chunk(self, start: int, end: Optional[int], max_retries: int = 3) -> str:
+    async def _download_chunk(
+        self, start: int, end: Optional[int], max_retries: int = 3
+    ) -> str:
         key = self._key(start, end)
         name = f"{key}_{self._cfg.file_name}.sdownload"
         end_byte = end if end is not None else self._cfg.file_size - 1
@@ -119,7 +125,8 @@ class DownloadTask:
             start_byte=start,
             end_byte=end_byte,
             file_size=file_size,
-            target_speed_bps=self._target_speed*0.1  # mudar para 1 está 0.1 para testes
+            target_speed_bps=self._target_speed
+            * 0.1,  # mudar para 1 está 0.1 para testes
         )
         self._chunks_stats[key] = stats
 
@@ -130,35 +137,34 @@ class DownloadTask:
             stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
             try:
                 self._logger.info(
-                    "[Attempt %s] byte range [%s]-[%s]", attempt, start, end or "EOF")
+                    "[Attempt %s] byte range [%s]-[%s]", attempt, start, end or "EOF"
+                )
                 raw_it = self._downloader.download_chunk(
-                    self._cfg.download_url, start, end_byte)
+                    self._cfg.download_url, start, end_byte
+                )
                 tracked = self._tracker(raw_it, stats)
                 await self._storage.save_binary_data(name, tracked)
                 stats.set_status(EDownloadStatus.COMPLETED)
-                self._logger.info(
-                    "[%s] ending attempt %s", name, attempt)
+                self._logger.info("[%s] ending attempt %s", name, attempt)
 
             except asyncio.CancelledError:
                 self._logger.info("_download_chunk cancelled - %s", name)
                 stats.set_status(EDownloadStatus.CANCELLED)
                 self._logger.warning(
-                    "[%s] download cancelled on attempt %s", name, attempt)
+                    "[%s] download cancelled on attempt %s", name, attempt
+                )
                 # stop.set()
                 # await stats_task
                 raise
 
             except Exception as e:
                 stats.set_status(EDownloadStatus.ERROR)
-                self._logger.warning(
-                    "[%s] failed attempt %s: %s", name, attempt, e
-                )
+                self._logger.warning("[%s] failed attempt %s: %s", name, attempt, e)
                 stats.bytes_downloaded = 0
                 stats.start_time = time.monotonic()
                 stats.last_update = stats.start_time
                 if attempt == max_retries:
-                    self._logger.error(
-                        "Chunk %s failed %s attempts", name, max_retries)
+                    self._logger.error("Chunk %s failed %s attempts", name, max_retries)
                     raise
                 await asyncio.sleep(attempt)
 
@@ -209,23 +215,25 @@ class DownloadTask:
                         del self._chunks_tasks[key]
                     except Exception as e:
                         self._logger.warning(
-                            "Download task failed: %s", e, exc_info=True)
+                            "Download task failed: %s", e, exc_info=True
+                        )
 
-            elif (not self._pending):
+            elif not self._pending:
                 self._logger.info("Possible error: _dl_controller")
 
             else:
                 self._logger.info(
-                    f"_dl_controller no chunks tasks qt task: {len(_not_done)}/{len(self._chunks_tasks)}")
+                    f"_dl_controller no chunks tasks qt task: {len(_not_done)}/{len(self._chunks_tasks)}"
+                )
                 await asyncio.sleep(timeout)
 
             qt_connections = len(self._chunks_tasks)
 
             if (
-                (qt_connections < self._max_conn
-                 and self._download_stats.speed_bps < self._target_speed
-                 and self._pending) or qt_connections == 0
-            ):
+                qt_connections < self._max_conn
+                and self._download_stats.speed_bps < self._target_speed
+                and self._pending
+            ) or qt_connections == 0:
                 self._start_next_chunk()
 
             self._update_stats()
@@ -261,16 +269,14 @@ class DownloadTask:
 
     async def _delete_all_temp_files(self):
         self._logger.info("_delete_all_temp_files")
-        files_to_delete = [
-            s.chunk_file_name for s in self._chunks_stats.values()]
-        files_names_in_storage = [
-            s.key for s in await self._storage.list_data()]
+        files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
+        files_names_in_storage = [s.key for s in await self._storage.list_data()]
         files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_names_in_storage]
+            s for s in files_to_delete if s in files_names_in_storage
+        ]
         self._logger.info(files_to_delete_in_storage)
         delete_tasks = [
-            self._storage.delete_data(s)
-            for s in files_to_delete_in_storage
+            self._storage.delete_data(s) for s in files_to_delete_in_storage
         ]
         self._logger.info(files_to_delete)
         await asyncio.gather(*delete_tasks)
@@ -287,8 +293,7 @@ class DownloadTask:
             try:
                 await task
             except asyncio.CancelledError:
-                self._logger.info(
-                    "Chunk task %s cancelled.", key_n)
+                self._logger.info("Chunk task %s cancelled.", key_n)
         self._chunks_tasks.clear()
         await self._delete_all_temp_files()
         self._chunks_stats.clear()
@@ -297,9 +302,7 @@ class DownloadTask:
         self._max_conn = connections
         self._download_stats = DownloadStats(self._cfg.file_size)
         self._init_ranges()
-        self._logger.warning(
-            "Starting download with %s connections", self._max_conn
-        )
+        self._logger.warning("Starting download with %s connections", self._max_conn)
         self._start_next_chunk()
 
     async def _watch_dog(self, timeout_without_update: int = 3):
@@ -308,12 +311,14 @@ class DownloadTask:
             restart_dl = False
 
             for _, stats in list(self._chunks_stats.items()):
-                if ((stats.status == EDownloadStatus.DOWNLOADING and stats.speed_bps == 0)
-                        or stats.status == EDownloadStatus.ERROR):
+                if (
+                    stats.status == EDownloadStatus.DOWNLOADING and stats.speed_bps == 0
+                ) or stats.status == EDownloadStatus.ERROR:
                     if (now - stats.last_update) > timeout_without_update:
                         restart_dl = True
                         self._logger.info(
-                            f"[WacthDog] chunk {stats.chunk_file_name} entered reason {stats.status} , speed {stats.speed_bps}")
+                            f"[WacthDog] chunk {stats.chunk_file_name} entered reason {stats.status} , speed {stats.speed_bps}"
+                        )
                         break
 
             if restart_dl and (not self._recovery_mode):
@@ -330,8 +335,7 @@ class DownloadTask:
                 self._start_download(connections=1)
 
         except Exception as e:
-            self._logger.error(
-                f"[Watchdog] Unexpected error: {e}", exc_info=True)
+            self._logger.error(f"[Watchdog] Unexpected error: {e}", exc_info=True)
             raise e
 
     def start(self):
@@ -353,17 +357,12 @@ class DownloadTask:
     def set_target_speed(self, target_speed_bs: int):
         self._target_speed = target_speed_bs
 
-    async def get_status(self):
-        ...
+    async def get_status(self): ...
 
-    async def cancel(self):
-        ...
+    async def cancel(self): ...
 
-    async def resume(self):
-        ...
+    async def resume(self): ...
 
-    async def pause(self):
-        ...
+    async def pause(self): ...
 
-    async def stop(self):
-        ...
+    async def stop(self): ...
