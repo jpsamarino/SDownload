@@ -14,7 +14,6 @@ from sDownload.services.downloader_manager.download_task import (
     DownloadConfig,
     DownloadTask,
 )
-from sDownload.utils.url_to_file_name import url_to_file_name
 
 
 class DummyDownloader(DownloaderProtocol):
@@ -36,7 +35,7 @@ class DummyDownloader(DownloaderProtocol):
     async def get_file_info(self, url: str) -> list:
         return [
             FileInfoModel(
-                file_name=url_to_file_name(url),
+                file_name="test.bin",
                 file_dir=None,
                 file_size=12,
                 file_id="123",
@@ -187,11 +186,9 @@ async def test_download_task_logs_debug(caplog):
     task.start()
     await task.wait_util_done()
 
-    # Mostra todos os logs capturados no terminal
     for record in caplog.records:
         print(f"{record.levelname}: {record.message}")
 
-    # Teste opcional: verificar se mensagens de debug foram emitidas
     assert any(
         "starting" in r.message.lower() or "chunk" in r.message.lower()
         for r in caplog.records
