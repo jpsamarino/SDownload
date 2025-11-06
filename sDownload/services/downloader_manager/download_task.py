@@ -1,10 +1,11 @@
 import asyncio
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple
-from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
+from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
@@ -70,7 +71,9 @@ class DownloadTask:
     def _key(self, start_byte: int, end_byte: Optional[int]) -> str:
         return f"{start_byte}_{end_byte or 'EOF'}"
 
-    async def _tracker(self, it: AsyncIterator[bytes], stats: ChunkDownloadStats):
+    async def _tracker(
+        self, it: AsyncGenerator[bytes, None], stats: ChunkDownloadStats
+    ):
         try:
             start_time = time.monotonic()
             accumulated_bytes = 0
@@ -115,7 +118,7 @@ class DownloadTask:
 
     async def _download_chunk(
         self, start: int, end: Optional[int], max_retries: int = 3
-    ) -> str:
+    ):
         key = self._key(start, end)
         name = f"{key}_{self._cfg.file_name}.sdownload"
         end_byte = end if end is not None else self._cfg.file_size - 1
@@ -176,7 +179,7 @@ class DownloadTask:
     def _get_bytes_dowloaded(self) -> int:
         return sum([s.bytes_downloaded for s in self._chunks_stats.values()]) or 0
 
-    def _update_stats(self) -> int:
+    def _update_stats(self):
         self._logger.info("_update_stats loop")
         _bytes_downloaded = self._get_bytes_dowloaded()
         self._download_stats.set_bytes_downloaded(_bytes_downloaded)
@@ -222,9 +225,9 @@ class DownloadTask:
                 self._logger.info("Possible error: _dl_controller")
 
             else:
-                self._logger.info(
-                    f"_dl_controller no chunks tasks qt task: {len(_not_done)}/{len(self._chunks_tasks)}"
-                )
+                # self._logger.info(
+                #     f"_dl_controller no chunks tasks qt task: {len(_not_done)}/{len(self._chunks_tasks)}"
+                # )
                 await asyncio.sleep(timeout)
 
             qt_connections = len(self._chunks_tasks)
@@ -346,7 +349,8 @@ class DownloadTask:
         #     self._watch_dog_runtime())
 
     async def wait_util_done(self):
-        await self._dl_controller_task
+        if self._dl_controller_task:
+            await self._dl_controller_task
         # if hasattr(self, "_watchdog_task"):
         #     self._watchdog_task.cancel()
         #     try:
