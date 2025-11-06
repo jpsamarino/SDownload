@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterable
+from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import httpx
@@ -8,7 +8,7 @@ from sDownload.exceptions.downloader_errors import (
     DownloadRequestError,
     FileInfoExtractionError,
 )
-from sDownload.interfaces.protocols.dowloader_protocol import DownloaderProtocol
+from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 from sDownload.interfaces.protocols.file_info_model import FileInfoModel
 from sDownload.utils.url_to_file_name import url_to_file_name
@@ -60,7 +60,7 @@ class HttpxDownloader(DownloaderProtocol):
         start_byte: int = 0,
         end_byte: int | None = None,
         file_id: str | None = None,
-    ) -> AsyncIterable[bytes]:
+    ) -> AsyncGenerator[bytes, None]:
 
         headers: dict[str, str] = {}
 

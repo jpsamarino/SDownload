@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterable
+from collections.abc import AsyncGenerator
 from typing import Protocol
 from .file_info_model import FileInfoModel
 
@@ -10,7 +10,7 @@ class DownloaderProtocol(Protocol):
         start_byte: int = 0,
         end_byte: int | None = None,
         file_id: str | None = None,
-    ) -> AsyncIterable[bytes]:
+    ) -> AsyncGenerator[bytes, None]:
         """
         Download a chunk of data from a specified URL.
 
