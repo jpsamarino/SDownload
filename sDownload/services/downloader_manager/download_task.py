@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
@@ -11,6 +10,9 @@ from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     DownloadStats,
     EDownloadStatus,
+)
+from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
+    throttle_and_track_async_stream,
 )
 
 
@@ -71,35 +73,6 @@ class DownloadTask:
     def _key(self, start_byte: int, end_byte: Optional[int]) -> str:
         return f"{start_byte}_{end_byte or 'EOF'}"
 
-    async def _tracker(
-        self, it: AsyncGenerator[bytes, None], stats: ChunkDownloadStats
-    ):
-        try:
-            start_time = time.monotonic()
-            accumulated_bytes = 0
-            async for data in it:
-                qt_bytes = len(data)
-                stats.add_qt_bytes_downloaded(qt_bytes)
-                accumulated_bytes += qt_bytes
-                yield data
-                if (
-                    stats.target_speed_bps
-                    and accumulated_bytes > stats.target_speed_bps
-                ):
-                    time_elapsed = time.monotonic() - start_time
-                    time_expected = accumulated_bytes / stats.target_speed_bps
-                    if time_elapsed < time_expected:
-                        await asyncio.sleep(min(1, time_expected - time_elapsed))
-                    start_time = time.monotonic()
-                    accumulated_bytes = 0
-        finally:
-            self._logger.info("_tracker finished - %s", stats.chunk_file_name)
-            stats.update()
-            try:
-                await it.aclose()
-            except (RuntimeError, AttributeError):
-                pass
-
     async def _periodic_stats(
         self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0
     ):
@@ -118,7 +91,7 @@ class DownloadTask:
 
     async def _download_chunk(
         self, start: int, end: Optional[int], max_retries: int = 3
-    ):
+    ) -> str | None:
         key = self._key(start, end)
         name = f"{key}_{self._cfg.file_name}.sdownload"
         end_byte = end if end is not None else self._cfg.file_size - 1
@@ -145,7 +118,7 @@ class DownloadTask:
                 raw_it = self._downloader.download_chunk(
                     self._cfg.download_url, start, end_byte
                 )
-                tracked = self._tracker(raw_it, stats)
+                tracked = throttle_and_track_async_stream(raw_it, stats)
                 await self._storage.save_binary_data(name, tracked)
                 stats.set_status(EDownloadStatus.COMPLETED)
                 self._logger.info("[%s] ending attempt %s", name, attempt)
@@ -179,7 +152,7 @@ class DownloadTask:
     def _get_bytes_dowloaded(self) -> int:
         return sum([s.bytes_downloaded for s in self._chunks_stats.values()]) or 0
 
-    def _update_stats(self):
+    def _update_stats(self) -> None:
         self._logger.info("_update_stats loop")
         _bytes_downloaded = self._get_bytes_dowloaded()
         self._download_stats.set_bytes_downloaded(_bytes_downloaded)
