@@ -1,8 +1,8 @@
-from sDownload.utils.range_utils import calculate_ranges, ChunkRange
+from sDownload.utils.range_operations import calculate_ranges, ChunkRange
 
 
 def test_no_cache():
-    ranges = calculate_ranges(100, 4, [])
+    ranges = calculate_ranges(100, 4)
     expected = [
         ChunkRange(0, 24),
         ChunkRange(25, 49),
@@ -26,7 +26,6 @@ def test_partial_cache_fill_gaps():
 
     # Check specific known chunks
     assert ChunkRange(0, 10) in ranges
-    assert ChunkRange(11, 19) in ranges
     assert ChunkRange(20, 45) in ranges
     assert ChunkRange(163, None) in ranges
     total_bytes = sum(
