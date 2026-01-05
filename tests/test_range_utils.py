@@ -55,3 +55,24 @@ def test_small_gap_splitting():
     ranges = calculate_ranges(100, 10, [ChunkRange(0, 5)])
     assert ranges[0] == ChunkRange(0, 5)
     assert ranges[1] == ChunkRange(6, 15)
+
+
+def test_common_case():
+    ranges = calculate_ranges(108166270, 5, [])
+    expected = [
+        ChunkRange(0, 21633253),
+        ChunkRange(21633254, 43266507),
+        ChunkRange(43266508, 64899761),
+        ChunkRange(64899762, 86533015),
+        ChunkRange(86533016, None),
+    ]
+    total_bytes = sum(
+        (
+            (range.end - range.start + 1)
+            if range.end is not None
+            else 108166270 - range.start
+        )
+        for range in ranges
+    )
+    assert total_bytes == 108166270
+    assert ranges == expected
