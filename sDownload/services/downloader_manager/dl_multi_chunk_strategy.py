@@ -1,46 +1,56 @@
-from typing import Dict, Iterator, List, Optional, Tuple, TypeAlias, TypedDict
+from sDownload.interfaces.protocols.download_strategy_protocol import (
+    ChunkOperationActions,
+    ChunkRange,
+    DownloadStrategyProtocol,
+)
+from sDownload.utils.range_operations import calculate_ranges
+from sDownload.services.downloader_manager.download_stats_models import (
+    ChunkDownloadStats,
+    DownloadStats,
+)
 
-from sDownload.services.downloader_manager.download_stats_models import ChunkDownloadStats
 
-ChunkRange: TypeAlias = Tuple[int, Optional[int]]
-ChunkRangeList: TypeAlias = list[ChunkRange]
-
-
-class ChunkOperationActions(TypedDict):
-    chunks_to_start: Optional[ChunkRangeList]
-    chunks_to_stop: Optional[ChunkRangeList]
-
-
-class MultiChunkDownloadStrategy:
+class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
     max_conn: int = 1
+    target_qt_conn: int = 0
 
-    def calc_range(self,
-                   file_size: int,
-                   max_conn: int,
-                   use_chunked_download: bool
-                   ) -> ChunkRangeList:
-        # add finished chunk with args
-        _pending = []
-        if not use_chunked_download:
-            self.max_conn = 1
-            _pending.append((0, None))
-            return _pending
-        total, parts = file_size, max_conn
-        base, rem = divmod(total, parts)
-        cur = 0
-        for i in range(parts):
-            extra = 1 if i < rem else 0
-            end = cur + base + extra - 1
-            _pending.append(
-                (cur, end if end < total - 1 else None))
-            cur = end + 1
-        return _pending
+    def __init__(
+        self,
+        max_conn: int = 1,
+        use_chunked_download: bool = True,
+        cache: list[ChunkRange] | None = None,
+    ):
+        self.max_conn = max_conn
+        self.target_qt_conn = max_conn
+        self.use_chunked_download = use_chunked_download
+        self.cache = cache
+        self._initialized = False
 
-    def get_start_actions(self, chunks: Dict[str, ChunkDownloadStats]) -> Iterator[ChunkOperationActions]:
-        ...
+    def _calc_initial_ranges(self, file_size: int) -> list[ChunkRange]:
+        if not self.use_chunked_download or file_size <= 0:
+            return [ChunkRange(0, None)]
 
-    def get_update_actions(self, chunks: Dict[str, ChunkDownloadStats]) -> Iterator[ChunkOperationActions]:
-        ...
+        limit_size_per_chunk = 2 * 1024 * 1024  # 2MB
+        if file_size // self.max_conn < limit_size_per_chunk:
+            self.target_qt_conn = file_size // limit_size_per_chunk
 
-    def get_stop_actions(self, chunks: Dict[str, ChunkDownloadStats]) -> Iterator[ChunkOperationActions]:
-        ...
+        return calculate_ranges(file_size, self.target_qt_conn, self.cache)
+
+    def on_start(
+        self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
+    ) -> ChunkOperationActions:
+        if chunks_stats:
+            return {"chunks_to_start": None, "chunks_to_stop": None}
+
+        ranges = self._calc_initial_ranges(dl_stats.file_size)
+        return {"chunks_to_start": ranges, "chunks_to_stop": None}
+
+    def on_update(
+        self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
+    ) -> ChunkOperationActions:
+        return {"chunks_to_start": None, "chunks_to_stop": None}
+
+    def on_stop(
+        self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
+    ) -> ChunkOperationActions:
+        return {"chunks_to_start": None, "chunks_to_stop": None}

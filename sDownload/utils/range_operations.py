@@ -1,5 +1,7 @@
 from typing import List
-from sDownload.interfaces.protocols.download_strategy import ChunkRange
+from sDownload.interfaces.protocols.download_strategy_protocol import (
+    ChunkRange,
+)  # change it to model
 
 
 def calculate_ranges(
