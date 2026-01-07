@@ -43,8 +43,8 @@ class DownloadStrategyProtocol(Protocol):
         """Return actions that should update currently running downloads."""
         ...
 
-    def on_stop(
+    def on_end(
         self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationActions:
-        """Return actions that should stop active chunk downloads."""
+    ) -> None:
+        """Execute any cleanup or finalization when downloads are stopped or ended."""
         ...

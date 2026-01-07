@@ -50,7 +50,6 @@ class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
     ) -> ChunkOperationActions:
         return {"chunks_to_start": None, "chunks_to_stop": None}
 
-    def on_stop(
+    def on_end(
         self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationActions:
-        return {"chunks_to_start": None, "chunks_to_stop": None}
+    ) -> None: ...
