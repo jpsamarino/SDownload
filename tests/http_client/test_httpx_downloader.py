@@ -1,4 +1,5 @@
 import pytest
+from sDownload.exceptions.downloader_errors import DownloadRequestError
 from sDownload.http_client.httpx_downloader import HttpxDownloader
 from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 
@@ -123,13 +124,31 @@ async def test_download_chunk_invalid_range(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
     downloader = HttpxDownloader(config)
     url = f"{nginx_custom['http']}/default/file_100k.bin"
-    with pytest.raises(Exception):
+    with pytest.raises(Exception) as exc_info:
         _ = [
             chunk
             async for chunk in downloader.download_chunk(
                 url, start_byte=200000, end_byte=300000
             )
         ]
+    assert isinstance(exc_info.value, DownloadRequestError)
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_invalid_end_range(nginx_custom):
+    config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/default/file_100k.bin"
+    # download only a part of the file (from byte 102390 to byte 102400)
+    partial = [
+        chunk
+        async for chunk in downloader.download_chunk(
+            url, start_byte=102390, end_byte=511990
+        )
+    ]
+    data = b"".join(partial)
+    total_size = 100 * 1024
+    assert len(data) == total_size - 102390
 
 
 @pytest.mark.asyncio
