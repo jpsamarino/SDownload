@@ -56,6 +56,10 @@ class ChunkManager:
             )
             tracked = throttle_and_track_async_stream(raw_it, stats)
             await self._storage.save_binary_data(name, tracked)
+            if stats.bytes_downloaded != file_size:
+                raise IOError(
+                    f"Chunk size error: expected {file_size} bytes, got {stats.bytes_downloaded} bytes"
+                )
             stats.set_status(EDownloadStatus.COMPLETED)
             self._logger.info("[%s] ending", name)
 
@@ -75,6 +79,7 @@ class ChunkManager:
         finally:
             stop.set()
             await stats_task
+            # del self._chunks_tasks[key]
         return key
 
     async def _periodic_stats(
@@ -96,7 +101,8 @@ class ChunkManager:
         key = self._key(start, end)
         if key not in self._chunks_tasks:
             self._chunks_tasks[key] = asyncio.create_task(
-                self._download_chunk(start, end)
+                self._download_chunk(start, end),
+                name=key,
             )
 
     async def cancel_chunk(self, start: int, end: None | int) -> bool:
@@ -158,17 +164,23 @@ class ChunkManager:
     async def wait_for_completed_chunks(self, timeout: float = 2.0) -> list[str]:
         if not self._chunks_tasks:
             return []
+
         done, _ = await asyncio.wait(
-            list(self._chunks_tasks.values()),
+            self._chunks_tasks.values(),
             timeout=timeout,
             return_when=asyncio.FIRST_COMPLETED,
         )
-        completed_keys = []
+
+        completed_keys: list[str] = []
+
         for task in done:
+            key = task.get_name()
             try:
-                key = task.result()
+                task.result()
                 completed_keys.append(key)
-                del self._chunks_tasks[key]
             except Exception as e:
-                self._logger.warning("Chunk task failed: %s", e, exc_info=True)
+                self._logger.warning("Chunk task %s failed: %s", key, e, exc_info=True)
+            finally:
+                self._chunks_tasks.pop(key, None)
+
         return completed_keys
