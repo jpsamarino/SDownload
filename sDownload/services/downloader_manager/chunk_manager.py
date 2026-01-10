@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.services.downloader_manager.download_stats_models import (
@@ -25,34 +26,38 @@ class ChunkManager:
         self._downloader = downloader
         self._storage = storage
         self._logger = logger
-        self._chunks_stats: dict[str, ChunkDownloadStats] = {}
-        self._chunks_tasks: dict[str, asyncio.Task] = {}
+        self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
+        self._chunks_tasks: dict[ChunkRange, asyncio.Task] = {}
 
     def _key(self, start_byte: int, end_byte: None | int) -> str:
         return f"{start_byte}_{end_byte or 'EOF'}"
 
-    async def _download_chunk(self, start: int, end: None | int) -> str | None:
-        key = self._key(start, end)
+    async def _download_chunk(self, chunk_range: ChunkRange) -> str | None:
+        key = self._key(chunk_range.start, chunk_range.end)
         name = f"{key}_{self._cfg.file_name}.sdownload"
-        end_byte = end if end is not None else self._cfg.file_size - 1
-        file_size = end_byte - start + 1
+        end_byte = (
+            chunk_range.end if chunk_range.end is not None else self._cfg.file_size - 1
+        )
+        file_size = end_byte - chunk_range.start + 1
         stats = ChunkDownloadStats(
             chunk_file_name=name,
-            start_byte=start,
+            start_byte=chunk_range.start,
             end_byte=end_byte,
             file_size=file_size,
             target_speed_bps=self._cfg.max_speed_bytes_per_second * 0.1,
         )
-        self._chunks_stats[key] = stats
+        self._chunks_stats[chunk_range] = stats
 
         self._logger.info("_download_chunk")
         stats.set_status(EDownloadStatus.DOWNLOADING)
         stop = asyncio.Event()
         stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
         try:
-            self._logger.info("byte range [%s]-[%s]", start, end or "EOF")
+            self._logger.info(
+                "byte range [%s]-[%s]", chunk_range.start, chunk_range.end or "EOF"
+            )
             raw_it = self._downloader.download_chunk(
-                self._cfg.download_url, start, end_byte
+                self._cfg.download_url, chunk_range.start, end_byte
             )
             tracked = throttle_and_track_async_stream(raw_it, stats)
             await self._storage.save_binary_data(name, tracked)
@@ -97,47 +102,68 @@ class ChunkManager:
             await asyncio.sleep(interval)
         stats.update()
 
-    def start_chunk(self, start: int, end: None | int) -> None:
-        key = self._key(start, end)
-        if key not in self._chunks_tasks:
-            self._chunks_tasks[key] = asyncio.create_task(
-                self._download_chunk(start, end),
-                name=key,
+    def start_chunk(self, chunk_range: ChunkRange) -> None:
+        if chunk_range not in self._chunks_tasks:
+            self._chunks_tasks[chunk_range] = asyncio.create_task(
+                self._download_chunk(chunk_range),
+                name=str(chunk_range),
             )
 
-    async def cancel_chunk(self, start: int, end: None | int) -> bool:
-        key = self._key(start, end)
-        if key in self._chunks_tasks:
-            self._chunks_stats[key].update()
-            if self._chunks_stats[key].status == EDownloadStatus.DOWNLOADING:
-                self._chunks_tasks[key].cancel()
-                try:
-                    await self._chunks_tasks[key]
-                except asyncio.CancelledError:
-                    self._logger.info("Chunk task %s cancelled.", key)
+    async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 
-                del self._chunks_tasks[key]
+        if chunk_range in self._chunks_tasks:
+            self._chunks_stats[chunk_range].update()
+            if self._chunks_stats[chunk_range].status == EDownloadStatus.DOWNLOADING:
+                self._chunks_tasks[chunk_range].cancel()
+                try:
+                    await self._chunks_tasks[chunk_range]
+                except asyncio.CancelledError:
+                    self._logger.info("Chunk task %s cancelled.", chunk_range)
+                del self._chunks_tasks[chunk_range]
                 return True
 
             self._logger.info(
                 "Chunk %s not cancelled because its status is %s",
-                key,
-                self._chunks_stats[key].status,
+                chunk_range,
+                self._chunks_stats[chunk_range].status,
             )
             return False
 
-    def get_active_chunks(self) -> list[str]:
+    def get_active_chunks(self) -> list[ChunkRange]:
         return list(self._chunks_tasks.keys())
 
-    def get_chunk_stats(self, start: int, end: None | int) -> None | ChunkDownloadStats:
-        key = self._key(start, end)
-        return self._chunks_stats.get(key)
+    def get_chunk_stats(self, chunk_range: ChunkRange) -> None | ChunkDownloadStats:
+        return self._chunks_stats.get(chunk_range)
 
-    def get_all_chunk_stats(self) -> dict[str, ChunkDownloadStats]:
+    def get_all_chunk_stats(self) -> dict[ChunkRange, ChunkDownloadStats]:
         return self._chunks_stats.copy()
 
+    def set_speed_limit(
+        self, speed_bps: float, chunk_range: ChunkRange | None = None
+    ) -> None:
+        if chunk_range:
+            stats = self._chunks_stats.get(chunk_range)
+            if stats:
+                stats.target_speed_bps = speed_bps
+            else:
+                self._logger.warning("No chunk stats found for key: %s", chunk_range)
+        else:
+            for stats in self._chunks_stats.values():
+                stats.target_speed_bps = speed_bps
+
     def get_downloaded_bytes(self) -> int:
-        return sum([s.bytes_downloaded for s in self._chunks_stats.values()]) or 0
+        # only not error/cancelled chunks
+        return (
+            sum(
+                [
+                    s.bytes_downloaded
+                    for s in self._chunks_stats.values()
+                    if s.status
+                    not in (EDownloadStatus.ERROR, EDownloadStatus.CANCELLED)
+                ]
+            )
+            or 0
+        )
 
     async def cleanup_temp_files(self) -> None:
         self._logger.info("Cleaning up temp files")
@@ -153,12 +179,12 @@ class ChunkManager:
         await asyncio.gather(*delete_tasks)
 
     async def cancel_all_chunks(self) -> None:
-        for key, task in list(self._chunks_tasks.items()):
+        for chunk_range, task in list(self._chunks_tasks.items()):
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
-                self._logger.info("Chunk task %s cancelled.", key)
+                self._logger.info("Chunk task %s cancelled.", chunk_range)
         self._chunks_tasks.clear()
 
     async def wait_for_completed_chunks(self, timeout: float = 2.0) -> list[str]:
@@ -171,16 +197,16 @@ class ChunkManager:
             return_when=asyncio.FIRST_COMPLETED,
         )
 
-        completed_keys: list[str] = []
+        completed: list[ChunkRange] = []
 
-        for task in done:
-            key = task.get_name()
-            try:
-                task.result()
-                completed_keys.append(key)
-            except Exception as e:
-                self._logger.warning("Chunk task %s failed: %s", key, e, exc_info=True)
-            finally:
-                self._chunks_tasks.pop(key, None)
+        for chunk, task in list(self._chunks_tasks.items()):
+            if task in done:
+                try:
+                    task.result()
+                    completed.append(chunk)
+                except Exception as e:
+                    self._logger.warning("Chunk %s failed: %s", chunk, e, exc_info=True)
+                finally:
+                    self._chunks_tasks.pop(chunk, None)
 
-        return completed_keys
+        return completed
