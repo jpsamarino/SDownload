@@ -7,8 +7,6 @@ from typing import AsyncIterator, Dict, List, Optional, Tuple
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.interfaces.protocols.download_strategy_protocol import (
-    ChunkOperationActions,
-    ChunkRange,
     DownloadStrategyProtocol,
 )
 from sDownload.services.downloader_manager.download_stats_models import (

@@ -1,19 +1,13 @@
 from typing import Protocol, Dict, TypedDict, NamedTuple
 
+from sDownload.interfaces.protocols.chunk_models import (
+    ChunkOperationPlanModel,
+    ChunkRange,
+)
 from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     DownloadStats,
 )
-
-
-class ChunkRange(NamedTuple):
-    start: int
-    end: int | None
-
-
-class ChunkOperationActions(TypedDict):
-    chunks_to_start: list[ChunkRange] | None
-    chunks_to_stop: list[ChunkRange] | None
 
 
 class DownloadStrategyProtocol(Protocol):
@@ -33,13 +27,13 @@ class DownloadStrategyProtocol(Protocol):
 
     def on_start(
         self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationActions:
+    ) -> ChunkOperationPlanModel:
         """Return actions that should start new chunk downloads."""
         ...
 
     def on_update(
         self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationActions:
+    ) -> ChunkOperationPlanModel:
         """Return actions that should update currently running downloads."""
         ...
 
