@@ -183,7 +183,7 @@ class ChunkManager:
         done, _ = await asyncio.wait(
             self._chunks_tasks.values(),
             timeout=timeout,
-            return_when=asyncio.FIRST_COMPLETED,
+            return_when=asyncio.ALL_COMPLETED,
         )
 
         completed: list[ChunkRange] = []
