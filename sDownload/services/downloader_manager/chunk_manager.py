@@ -29,12 +29,9 @@ class ChunkManager:
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
         self._chunks_tasks: dict[ChunkRange, asyncio.Task] = {}
 
-    def _key(self, start_byte: int, end_byte: None | int) -> str:
-        return f"{start_byte}_{end_byte or 'EOF'}"
+    async def _download_chunk(self, chunk_range: ChunkRange) -> ChunkRange | None:
 
-    async def _download_chunk(self, chunk_range: ChunkRange) -> str | None:
-        key = self._key(chunk_range.start, chunk_range.end)
-        name = f"{key}_{self._cfg.file_name}.sdownload"
+        name = f"{chunk_range}_{self._cfg.file_name}.sdownload"
         end_byte = (
             chunk_range.end if chunk_range.end is not None else self._cfg.file_size - 1
         )
@@ -84,15 +81,14 @@ class ChunkManager:
         finally:
             stop.set()
             await stats_task
-            # del self._chunks_tasks[key]
-        return key
+        return chunk_range
 
     async def _periodic_stats(
         self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0
     ):
         while not stop.is_set():
             stats.update()
-            self._logger.info(
+            self._logger.debug(
                 "[%s] %.1f%% @ %.2f MB/s - limit %.2f MB/s",
                 stats.chunk_file_name,
                 stats.progress,
@@ -106,7 +102,6 @@ class ChunkManager:
         if chunk_range not in self._chunks_tasks:
             self._chunks_tasks[chunk_range] = asyncio.create_task(
                 self._download_chunk(chunk_range),
-                name=str(chunk_range),
             )
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
@@ -153,22 +148,16 @@ class ChunkManager:
 
     def get_downloaded_bytes(self) -> int:
         # only not error/cancelled chunks
-        return (
-            sum(
-                [
-                    s.bytes_downloaded
-                    for s in self._chunks_stats.values()
-                    if s.status
-                    not in (EDownloadStatus.ERROR, EDownloadStatus.CANCELLED)
-                ]
-            )
-            or 0
+        return sum(
+            s.bytes_downloaded
+            for s in self._chunks_stats.values()
+            if s.status not in (EDownloadStatus.ERROR, EDownloadStatus.CANCELLED)
         )
 
     async def cleanup_temp_files(self) -> None:
         self._logger.info("Cleaning up temp files")
         files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
-        files_names_in_storage = [s.key for s in await self._storage.list_data()]
+        files_names_in_storage = {s.key for s in await self._storage.list_data()}
         files_to_delete_in_storage = [
             s for s in files_to_delete if s in files_names_in_storage
         ]
@@ -187,7 +176,7 @@ class ChunkManager:
                 self._logger.info("Chunk task %s cancelled.", chunk_range)
         self._chunks_tasks.clear()
 
-    async def wait_for_completed_chunks(self, timeout: float = 2.0) -> list[str]:
+    async def wait_for_completed_chunks(self, timeout: float = 2.0) -> list[ChunkRange]:
         if not self._chunks_tasks:
             return []
 
