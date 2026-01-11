@@ -187,15 +187,25 @@ class ChunkManager:
         )
 
         completed: list[ChunkRange] = []
+        to_remove = [
+            (chunk_range, task)
+            for chunk_range, task in self._chunks_tasks.items()
+            if task in done
+        ]
 
-        for chunk, task in list(self._chunks_tasks.items()):
-            if task in done:
-                try:
-                    task.result()
-                    completed.append(chunk)
-                except Exception as e:
-                    self._logger.warning("Chunk %s failed: %s", chunk, e, exc_info=True)
-                finally:
-                    self._chunks_tasks.pop(chunk, None)
+        for chunk_range, task in to_remove:
+            try:
+                task.result()
+                completed.append(chunk_range)
+            except Exception as e:
+                self._logger.warning(
+                    "%s: Chunk %s failed: %s",
+                    self._cfg.file_name,
+                    chunk_range,
+                    e,
+                    exc_info=True,
+                )
+            finally:
+                self._chunks_tasks.pop(chunk_range, None)
 
         return completed
