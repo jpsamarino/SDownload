@@ -40,12 +40,15 @@ class ChunkManager:
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
         self._chunks_tasks: dict[ChunkRange, asyncio.Task] = {}
         self._wait_lock = asyncio.Lock()
+        self._monitor_task: asyncio.Task | None = None
 
     async def _download_chunk(self, chunk_range: ChunkRange) -> ChunkRange | None:
 
         name = f"{chunk_range}_{self._cfg.file_name}.sdownload"
         end_byte = (
-            chunk_range.end if chunk_range.end is not None else self._cfg.file_size - 1
+            chunk_range.end
+            if chunk_range.end is not None
+            else (self._cfg.file_size - 1) if self._cfg.file_size is not None else None
         )
         file_size = end_byte - chunk_range.start + 1
         stats = ChunkDownloadStats(
@@ -59,8 +62,7 @@ class ChunkManager:
 
         self._logger.info("_download_chunk")
         stats.set_status(EDownloadStatus.DOWNLOADING)
-        stop = asyncio.Event()
-        stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
+
         try:
             self._logger.info(
                 "byte range [%s]-[%s]", chunk_range.start, chunk_range.end or "EOF"
@@ -91,30 +93,57 @@ class ChunkManager:
             raise
 
         finally:
-            stop.set()
-            await stats_task
+            stats.update()
+
         return chunk_range
 
-    async def _periodic_stats(
-        self, stats: ChunkDownloadStats, stop: asyncio.Event, interval: float = 1.0
-    ):
-        while not stop.is_set():
-            stats.update()
-            self._logger.debug(
-                "[%s] %.1f%% @ %.2f MB/s - limit %.2f MB/s",
-                stats.chunk_file_name,
-                stats.progress,
-                stats.speed_bps / (1024 * 1024),
-                stats.target_speed_bps / (1024 * 1024),
-            )
-            await asyncio.sleep(interval)
-        stats.update()
+    async def _monitor_loop(self, interval: float = 0.5) -> None:
+        try:
+            while self._chunks_tasks:
+                total_speed = 0.0
+                active_count = 0
+                active_stats = [
+                    s
+                    for s in self._chunks_stats.values()
+                    if s.status == EDownloadStatus.DOWNLOADING
+                ]
+                for stats in active_stats:
+                    stats.update()
+                    total_speed += stats.speed_bps
+                    active_count += 1
+
+                if active_count > 0:
+                    self._logger.info(
+                        "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
+                        self._cfg.file_name,
+                        total_speed / (1024 * 1024),
+                        active_count,
+                    )
+
+                    if self._logger.isEnabledFor(logging.DEBUG):
+                        for stats in active_stats:
+                            self._logger.debug(
+                                " └──▶ Chunk [%d-%d] %.1f%% @ %.2f MB/s",
+                                stats.start_byte,
+                                stats.end_byte,
+                                stats.progress,
+                                stats.speed_bps / (1024 * 1024),
+                            )
+                await asyncio.sleep(interval)
+
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._monitor_task = None
 
     def start_chunk(self, chunk_range: ChunkRange) -> None:
         if chunk_range not in self._chunks_tasks:
             self._chunks_tasks[chunk_range] = asyncio.create_task(
                 self._download_chunk(chunk_range),
             )
+
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitor_task = asyncio.create_task(self._monitor_loop())
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 
@@ -136,8 +165,8 @@ class ChunkManager:
             )
             return False
 
-    def get_active_chunks(self) -> list[ChunkRange]:
-        return list(self._chunks_tasks.keys())
+    def get_active_chunks(self) -> tuple[ChunkRange, ...]:
+        return tuple(self._chunks_tasks.keys())
 
     def get_chunk_stats(self, chunk_range: ChunkRange) -> None | ChunkDownloadStats:
         return self._chunks_stats.get(chunk_range)
@@ -209,10 +238,8 @@ class ChunkManager:
             completed: list[CompletedChunk] = []
 
             for chunk_range, task in to_remove:
-                # Remove from active tasks map
                 self._chunks_tasks.pop(chunk_range, None)
                 try:
-                    # Check for exceptions
                     task.result()
                     stats = self._chunks_stats.get(chunk_range)
                     if stats:

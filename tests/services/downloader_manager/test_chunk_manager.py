@@ -27,7 +27,7 @@ async def test_chunk_manager_with_nginx(nginx_custom, storage):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
     result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
+        f"{nginx_custom['http']}/default/file_100k.bin"
     )
     result = result_list[0]
     assert result.file_name == "file_100k.bin"
@@ -52,11 +52,11 @@ async def test_chunk_manager_with_nginx(nginx_custom, storage):
 
     # Start chunks
     chunk_manager.start_chunk(ChunkRange(0, 51199))
-    chunk_manager.start_chunk(ChunkRange(51200, 102399))
+    chunk_manager.start_chunk(ChunkRange(51200, None))
 
     # Wait for completion
     while chunk_manager.get_active_chunks():
-        completed = await chunk_manager.wait_for_completed_chunks(1.0)
+        completed = await chunk_manager.wait_for_completed_chunks(100.0)
         logger.info(f"Completed chunks: {completed}")
 
     # Verify downloaded bytes
@@ -237,10 +237,10 @@ async def test_chunk_manager_stats_tracking(nginx_custom, storage):
     chunk_manager.start_chunk(ChunkRange(51200, 102399))
 
     # Check stats during download
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
     active = chunk_manager.get_active_chunks()
     assert len(active) > 0
-    stats = chunk_manager.get_chunk_stats(0, 51199)
+    stats = chunk_manager.get_chunk_stats(ChunkRange(0, 51199))
     assert stats is not None
     assert stats.status == EDownloadStatus.DOWNLOADING
 
@@ -290,7 +290,7 @@ async def test_chunk_manager_cancel_all_chunks(nginx_custom, storage):
     chunk_manager.start_chunk(ChunkRange(51200, 102399))
 
     # Wait a bit then cancel all
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
     await chunk_manager.cancel_all_chunks()
 
     # Verify no active chunks
