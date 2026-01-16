@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterable, Mapping
+from types import MappingProxyType
+from typing import NamedTuple
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
@@ -12,6 +15,14 @@ from sDownload.services.downloader_manager.download_task import DownloadConfig
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
+
+
+from typing import NamedTuple
+
+
+class CompletedChunk(NamedTuple):  # trocar por ChunkDownloadStats
+    range: ChunkRange
+    stats: ChunkDownloadStats
 
 
 class ChunkManager:
@@ -28,6 +39,7 @@ class ChunkManager:
         self._logger = logger
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
         self._chunks_tasks: dict[ChunkRange, asyncio.Task] = {}
+        self._wait_lock = asyncio.Lock()
 
     async def _download_chunk(self, chunk_range: ChunkRange) -> ChunkRange | None:
 
@@ -130,8 +142,8 @@ class ChunkManager:
     def get_chunk_stats(self, chunk_range: ChunkRange) -> None | ChunkDownloadStats:
         return self._chunks_stats.get(chunk_range)
 
-    def get_all_chunk_stats(self) -> dict[ChunkRange, ChunkDownloadStats]:
-        return self._chunks_stats.copy()
+    def get_all_chunk_stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
+        return MappingProxyType(self._chunks_stats)
 
     def set_speed_limit(
         self, speed_bps: float, chunk_range: ChunkRange | None = None
@@ -176,36 +188,69 @@ class ChunkManager:
                 self._logger.info("Chunk task %s cancelled.", chunk_range)
         self._chunks_tasks.clear()
 
-    async def wait_for_completed_chunks(self, timeout: float = 2.0) -> list[ChunkRange]:
-        if not self._chunks_tasks:
-            return []
+    async def _wait_for_chunks(
+        self, timeout: float | None, return_when: str
+    ) -> list[CompletedChunk]:
+        async with self._wait_lock:
+            if not self._chunks_tasks:
+                return []
 
-        done, _ = await asyncio.wait(
-            self._chunks_tasks.values(),
-            timeout=timeout,
-            return_when=asyncio.ALL_COMPLETED,
+            done, _ = await asyncio.wait(
+                self._chunks_tasks.values(),
+                timeout=timeout,
+                return_when=return_when,
+            )
+
+            to_remove = [
+                (chunk_range, task)
+                for chunk_range, task in self._chunks_tasks.items()
+                if task in done
+            ]
+            completed: list[CompletedChunk] = []
+
+            for chunk_range, task in to_remove:
+                # Remove from active tasks map
+                self._chunks_tasks.pop(chunk_range, None)
+                try:
+                    # Check for exceptions
+                    task.result()
+                    stats = self._chunks_stats.get(chunk_range)
+                    if stats:
+                        completed.append(CompletedChunk(chunk_range, stats))
+                except Exception as e:
+                    self._logger.warning(
+                        "%s: Chunk %s failed: %s",
+                        self._cfg.file_name,
+                        chunk_range,
+                        e,
+                        exc_info=True,
+                    )
+
+            return completed
+
+    async def wait_for_completed_chunks(
+        self, timeout: float | None = 2.0
+    ) -> list[CompletedChunk]:
+        return await self._wait_for_chunks(
+            timeout=timeout, return_when=asyncio.ALL_COMPLETED
         )
 
-        completed: list[ChunkRange] = []
-        to_remove = [
-            (chunk_range, task)
-            for chunk_range, task in self._chunks_tasks.items()
-            if task in done
-        ]
+    async def wait_for_first_completed_chunk(
+        self, timeout: float | None = 2.0
+    ) -> list[CompletedChunk]:
+        return await self._wait_for_chunks(
+            timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
 
-        for chunk_range, task in to_remove:
-            try:
-                task.result()
-                completed.append(chunk_range)
-            except Exception as e:
-                self._logger.warning(
-                    "%s: Chunk %s failed: %s",
-                    self._cfg.file_name,
-                    chunk_range,
-                    e,
-                    exc_info=True,
-                )
-            finally:
-                self._chunks_tasks.pop(chunk_range, None)
-
-        return completed
+    async def as_stream(self) -> AsyncIterable[CompletedChunk]:
+        """
+        Yields completed chunks as they finish.
+        Usage:
+            async for chunk in manager.as_stream():
+                print(chunk.stats.progress)
+        """
+        while self._chunks_tasks:
+            # timeout=None ensures we sleep until a task completes (no polling/wakeups)
+            completed_batch = await self.wait_for_first_completed_chunk(timeout=None)
+            for item in completed_batch:
+                yield item
