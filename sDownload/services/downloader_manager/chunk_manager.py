@@ -3,7 +3,7 @@ import logging
 import time
 from collections.abc import AsyncIterable, Mapping
 from types import MappingProxyType
-from typing import NamedTuple
+from typing import Literal
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
@@ -15,14 +15,6 @@ from sDownload.services.downloader_manager.download_task import DownloadConfig
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
-
-
-from typing import NamedTuple
-
-
-class CompletedChunk(NamedTuple):  # trocar por ChunkDownloadStats
-    range: ChunkRange
-    stats: ChunkDownloadStats
 
 
 class ChunkManager:
@@ -53,8 +45,7 @@ class ChunkManager:
         file_size = end_byte - chunk_range.start + 1
         stats = ChunkDownloadStats(
             chunk_file_name=name,
-            start_byte=chunk_range.start,
-            end_byte=end_byte,
+            range=chunk_range,
             file_size=file_size,
             target_speed_bps=self._cfg.max_speed_bytes_per_second * 0.1,
         )
@@ -165,8 +156,8 @@ class ChunkManager:
             )
             return False
 
-    def get_active_chunks(self) -> tuple[ChunkRange, ...]:
-        return tuple(self._chunks_tasks.keys())
+    def get_active_chunks(self) -> list[ChunkRange]:
+        return list(self._chunks_tasks.keys())
 
     def get_chunk_stats(self, chunk_range: ChunkRange) -> None | ChunkDownloadStats:
         return self._chunks_stats.get(chunk_range)
@@ -218,8 +209,13 @@ class ChunkManager:
         self._chunks_tasks.clear()
 
     async def _wait_for_chunks(
-        self, timeout: float | None, return_when: str
-    ) -> list[CompletedChunk]:
+        self,
+        timeout: float | None,
+        return_when: Literal[
+            asyncio.FIRST_COMPLETED,
+            asyncio.ALL_COMPLETED,
+        ],
+    ) -> list[ChunkDownloadStats]:
         async with self._wait_lock:
             if not self._chunks_tasks:
                 return []
@@ -230,54 +226,43 @@ class ChunkManager:
                 return_when=return_when,
             )
 
-            to_remove = [
-                (chunk_range, task)
-                for chunk_range, task in self._chunks_tasks.items()
-                if task in done
-            ]
-            completed: list[CompletedChunk] = []
+            completed: list[ChunkDownloadStats] = []
 
-            for chunk_range, task in to_remove:
-                self._chunks_tasks.pop(chunk_range, None)
-                try:
-                    task.result()
-                    stats = self._chunks_stats.get(chunk_range)
-                    if stats:
-                        completed.append(CompletedChunk(chunk_range, stats))
-                except Exception as e:
-                    self._logger.warning(
-                        "%s: Chunk %s failed: %s",
-                        self._cfg.file_name,
-                        chunk_range,
-                        e,
-                        exc_info=True,
-                    )
+            for chunk_range, task in self._chunks_tasks.items():
+                if task in done:
+                    completed.append(self._chunks_stats[chunk_range])
+                    try:
+                        _ = task.result()
+                    except Exception as e:
+                        self._logger.warning(
+                            "%s: Chunk %s failed: %s",
+                            self._cfg.file_name,
+                            chunk_range,
+                            e,
+                            exc_info=True,
+                        )
+
+            for stats in completed:
+                self._chunks_tasks.pop(stats.range, None)
 
             return completed
 
     async def wait_for_completed_chunks(
-        self, timeout: float | None = 2.0
-    ) -> list[CompletedChunk]:
+        self, timeout: float | None = None
+    ) -> list[ChunkDownloadStats]:
         return await self._wait_for_chunks(
             timeout=timeout, return_when=asyncio.ALL_COMPLETED
         )
 
     async def wait_for_first_completed_chunk(
-        self, timeout: float | None = 2.0
-    ) -> list[CompletedChunk]:
+        self, timeout: float | None = None
+    ) -> list[ChunkDownloadStats]:
         return await self._wait_for_chunks(
             timeout=timeout, return_when=asyncio.FIRST_COMPLETED
         )
 
-    async def as_stream(self) -> AsyncIterable[CompletedChunk]:
-        """
-        Yields completed chunks as they finish.
-        Usage:
-            async for chunk in manager.as_stream():
-                print(chunk.stats.progress)
-        """
+    async def as_stream(self) -> AsyncIterable[ChunkDownloadStats]:
         while self._chunks_tasks:
-            # timeout=None ensures we sleep until a task completes (no polling/wakeups)
-            completed_batch = await self.wait_for_first_completed_chunk(timeout=None)
+            completed_batch = await self.wait_for_first_completed_chunk()
             for item in completed_batch:
                 yield item

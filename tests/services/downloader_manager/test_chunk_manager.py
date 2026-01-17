@@ -55,9 +55,8 @@ async def test_chunk_manager_with_nginx(nginx_custom, storage):
     chunk_manager.start_chunk(ChunkRange(51200, None))
 
     # Wait for completion
-    while chunk_manager.get_active_chunks():
-        completed = await chunk_manager.wait_for_completed_chunks(100.0)
-        logger.info(f"Completed chunks: {completed}")
+    completed = await chunk_manager.wait_for_completed_chunks()
+    logger.info(f"Completed chunks: {completed}")
 
     # Verify downloaded bytes
     total_downloaded = chunk_manager.get_downloaded_bytes()

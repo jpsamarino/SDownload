@@ -6,6 +6,7 @@ import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.download_strategy_protocol import (
     DownloadStrategyProtocol,
 )
@@ -91,8 +92,7 @@ class DownloadTask:
         file_size = end_byte - start + 1
         stats = ChunkDownloadStats(
             chunk_file_name=name,
-            start_byte=start,
-            end_byte=end_byte,
+            range=ChunkRange(start, end_byte),
             file_size=file_size,
             target_speed_bps=self._target_speed
             * 0.1,  # mudar para 1 está 0.1 para testes

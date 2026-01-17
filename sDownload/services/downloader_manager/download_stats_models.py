@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import time
+from sDownload.interfaces.protocols.chunk_models import ChunkRange
 
 
 class EDownloadStatus(str, Enum):
@@ -14,8 +15,7 @@ class EDownloadStatus(str, Enum):
 @dataclass
 class ChunkDownloadStats:
     chunk_file_name: str
-    start_byte: int
-    end_byte: int | None
+    range: ChunkRange
     file_size: int
     bytes_downloaded: int = 0
     qt_bytes_last_update: int = 0
@@ -66,11 +66,13 @@ class DownloadStats:
         now = time.monotonic()
         time_elapsed_avg = now - self.start_time
         self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.avg_speed_bps = self.bytes_downloaded / \
-            time_elapsed_avg if time_elapsed_avg > 0 else 0
+        self.avg_speed_bps = (
+            self.bytes_downloaded / time_elapsed_avg if time_elapsed_avg > 0 else 0
+        )
         qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
         self.qt_bytes_last_update = self.bytes_downloaded
         time_elapsed_period = now - self.last_update
-        self.speed_bps = qt_bytes_elapsed / \
-            time_elapsed_period if time_elapsed_period > 0 else 0
+        self.speed_bps = (
+            qt_bytes_elapsed / time_elapsed_period if time_elapsed_period > 0 else 0
+        )
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update

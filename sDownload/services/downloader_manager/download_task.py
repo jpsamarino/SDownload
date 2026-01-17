@@ -14,13 +14,14 @@ from sDownload.services.downloader_manager.download_stats_models import (
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
+from sDownload.interfaces.protocols.chunk_models import ChunkRange
 
 
 @dataclass
 class DownloadConfig:
     file_name: str
     file_dir: Optional[str]
-    file_size: int
+    file_size: int | None
     file_id: Optional[str]
     download_url: str
     file_created_at: datetime
@@ -98,8 +99,7 @@ class DownloadTask:
         file_size = end_byte - start + 1
         stats = ChunkDownloadStats(
             chunk_file_name=name,
-            start_byte=start,
-            end_byte=end_byte,
+            range=ChunkRange(start, end_byte),
             file_size=file_size,
             target_speed_bps=self._target_speed
             * 0.1,  # mudar para 1 está 0.1 para testes
