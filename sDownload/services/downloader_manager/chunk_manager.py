@@ -127,6 +127,14 @@ class ChunkManager:
         finally:
             self._monitor_task = None
 
+    def _check_stop_monitor(self) -> None:
+        if (
+            not self._chunks_tasks
+            and self._monitor_task
+            and not self._monitor_task.done()
+        ):
+            self._monitor_task.cancel()
+
     def start_chunk(self, chunk_range: ChunkRange) -> None:
         if chunk_range not in self._chunks_tasks:
             self._chunks_tasks[chunk_range] = asyncio.create_task(
@@ -207,6 +215,7 @@ class ChunkManager:
             except asyncio.CancelledError:
                 self._logger.info("Chunk task %s cancelled.", chunk_range)
         self._chunks_tasks.clear()
+        self._check_stop_monitor()
 
     async def _wait_for_chunks(
         self,
@@ -245,6 +254,7 @@ class ChunkManager:
             for stats in completed:
                 self._chunks_tasks.pop(stats.range, None)
 
+            self._check_stop_monitor()
             return completed
 
     async def wait_for_completed_chunks(
