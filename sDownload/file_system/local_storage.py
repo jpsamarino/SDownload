@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import aiofiles
 import aiofiles.os
+import os
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
@@ -35,7 +36,7 @@ class LocalStorage(FileStorageProtocol):
             async for chunk in data:
                 await f.write(chunk)
             await f.flush()
-        await asyncio.sleep(0.5)
+            await asyncio.to_thread(os.fsync, f.fileno())
 
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
@@ -72,7 +73,7 @@ class LocalStorage(FileStorageProtocol):
                             break
                         await dest_file.write(chunk)
             await dest_file.flush()
-            await asyncio.sleep(0.5)  # await system data unlock
+            await asyncio.to_thread(os.fsync, dest_file.fileno())
 
     async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
         path = self.storage_dir / key
@@ -86,6 +87,8 @@ class LocalStorage(FileStorageProtocol):
         def do_truncate():
             with path.open("rb+") as f:
                 f.truncate(target_size_bytes)
+                f.flush()
+                os.fsync(f.fileno())
 
         await asyncio.to_thread(do_truncate)
 
