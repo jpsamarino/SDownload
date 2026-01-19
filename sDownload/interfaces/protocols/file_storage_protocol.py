@@ -41,6 +41,18 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
+    async def move_data(self, source_key: str, dest_key: str) -> None:
+        """
+        Move or rename data from source_key to dest_key.
+
+        This operation should be atomic where possible.
+        If dest_key already exists, it should be overwritten.
+
+        :param source_key: Current identifier of the data.
+        :param dest_key: New identifier for the data.
+        """
+        ...
+
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         """
         Merge multiple binary files into a single file.

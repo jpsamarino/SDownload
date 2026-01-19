@@ -3,6 +3,7 @@ from collections.abc import AsyncIterable, AsyncIterator
 from pathlib import Path
 from datetime import datetime
 import aiofiles
+import aiofiles.os
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
@@ -41,8 +42,7 @@ class LocalStorage(FileStorageProtocol):
         try:
             path.unlink()
         except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"{key} not found in storage: {path}") from e
+            raise FileNotFoundError(f"{key} not found in storage: {path}") from e
 
     async def list_data(self) -> list[FileSystemInfoModel]:
         files: list[FileSystemInfoModel] = []
@@ -88,3 +88,12 @@ class LocalStorage(FileStorageProtocol):
                 f.truncate(target_size_bytes)
 
         await asyncio.to_thread(do_truncate)
+
+    async def move_data(self, source_key: str, dest_key: str) -> None:
+        source_path = self.storage_dir / source_key
+        dest_path = self.storage_dir / dest_key
+
+        if not source_path.exists():
+            raise FileNotFoundError(f"{source_key} not found in storage")
+
+        await aiofiles.os.replace(source_path, dest_path)

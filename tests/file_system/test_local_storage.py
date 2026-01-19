@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from pathlib import Path
 import pytest
@@ -9,9 +8,11 @@ from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoM
 
 async def generate_chunks(data: bytes, chunk_size: int):
     for i in range(0, len(data), chunk_size):
-        yield data[i: i + chunk_size]
+        yield data[i : i + chunk_size]
+
 
 default_test_chunk_size = 4
+
 
 @pytest.fixture
 def storage(tmp_path: str):
@@ -40,8 +41,12 @@ async def test_list_data(storage: FileStorageProtocol, tmp_path: Path):
     content1 = b"1234"
     content2 = b"abcd"
 
-    await storage.save_binary_data("a.bin", generate_chunks(content1, default_test_chunk_size))
-    await storage.save_binary_data("b.bin", generate_chunks(content2, default_test_chunk_size))
+    await storage.save_binary_data(
+        "a.bin", generate_chunks(content1, default_test_chunk_size)
+    )
+    await storage.save_binary_data(
+        "b.bin", generate_chunks(content2, default_test_chunk_size)
+    )
 
     infos = await storage.list_data()
     assert len(infos) == 2
@@ -82,9 +87,15 @@ async def test_merge_three_parts(storage: LocalStorage):
     part1 = b"ABC"
     part2 = b"DEFG"
     part3 = b"HIJKLM"
-    await storage.save_binary_data("p1.bin", generate_chunks(part1, default_test_chunk_size))
-    await storage.save_binary_data("p2.bin", generate_chunks(part2, default_test_chunk_size))
-    await storage.save_binary_data("p3.bin", generate_chunks(part3, default_test_chunk_size))
+    await storage.save_binary_data(
+        "p1.bin", generate_chunks(part1, default_test_chunk_size)
+    )
+    await storage.save_binary_data(
+        "p2.bin", generate_chunks(part2, default_test_chunk_size)
+    )
+    await storage.save_binary_data(
+        "p3.bin", generate_chunks(part3, default_test_chunk_size)
+    )
 
     await storage.merge_binary_files(["p1.bin", "p2.bin", "p3.bin"], "merged.bin")
 
@@ -97,12 +108,18 @@ async def test_merge_three_parts(storage: LocalStorage):
 @pytest.mark.asyncio
 async def test_merge_overwrites_existing(storage: LocalStorage):
     existing = b"OLD"
-    await storage.save_binary_data("dest.bin", generate_chunks(existing, default_test_chunk_size))
+    await storage.save_binary_data(
+        "dest.bin", generate_chunks(existing, default_test_chunk_size)
+    )
 
     new1 = b"123"
     new2 = b"4567"
-    await storage.save_binary_data("n1.bin", generate_chunks(new1, default_test_chunk_size))
-    await storage.save_binary_data("n2.bin", generate_chunks(new2, default_test_chunk_size))
+    await storage.save_binary_data(
+        "n1.bin", generate_chunks(new1, default_test_chunk_size)
+    )
+    await storage.save_binary_data(
+        "n2.bin", generate_chunks(new2, default_test_chunk_size)
+    )
 
     await storage.merge_binary_files(["n1.bin", "n2.bin"], "dest.bin")
 
@@ -123,7 +140,9 @@ async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStora
 
     file_name = "testfile.bin"
     data = b"1234567890"
-    await storage.save_binary_data(file_name, generate_chunks(data, default_test_chunk_size))
+    await storage.save_binary_data(
+        file_name, generate_chunks(data, default_test_chunk_size)
+    )
     await storage.shrink_file_to(file_name, 15)
 
     merged = b""
@@ -136,10 +155,70 @@ async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStora
 async def test_shrink_file_to_truncates_correctly(storage: LocalStorage):
     file_name = "file_to_truncate.bin"
     data = b"abcdefghij"
-    await storage.save_binary_data(file_name, generate_chunks(data, default_test_chunk_size))
+    await storage.save_binary_data(
+        file_name, generate_chunks(data, default_test_chunk_size)
+    )
     await storage.shrink_file_to(file_name, 6)
 
     merged = b""
     async for chunk in storage.get_binary_data(file_name):
         merged += chunk
     assert merged == b"abcdef"
+
+
+@pytest.mark.asyncio
+async def test_move_data_renames_file(storage: LocalStorage, tmp_path: Path):
+    source_key = "source.bin"
+    dest_key = "dest.bin"
+    data = b"content to move"
+
+    await storage.save_binary_data(
+        source_key, generate_chunks(data, default_test_chunk_size)
+    )
+
+    assert (tmp_path / source_key).exists()
+    assert not (tmp_path / dest_key).exists()
+
+    await storage.move_data(source_key, dest_key)
+
+    assert not (tmp_path / source_key).exists()
+    assert (tmp_path / dest_key).exists()
+
+    # Verify content
+    content = b""
+    async for chunk in storage.get_binary_data(dest_key):
+        content += chunk
+    assert content == data
+
+
+@pytest.mark.asyncio
+async def test_move_data_overwrites_existing(storage: LocalStorage, tmp_path: Path):
+    source_key = "source.bin"
+    dest_key = "dest.bin"
+
+    data_source = b"new content"
+    data_dest = b"old content"
+
+    await storage.save_binary_data(
+        source_key, generate_chunks(data_source, default_test_chunk_size)
+    )
+    await storage.save_binary_data(
+        dest_key, generate_chunks(data_dest, default_test_chunk_size)
+    )
+
+    await storage.move_data(source_key, dest_key)
+
+    assert not (tmp_path / source_key).exists()
+    assert (tmp_path / dest_key).exists()
+
+    # Verify content overrides
+    content = b""
+    async for chunk in storage.get_binary_data(dest_key):
+        content += chunk
+    assert content == data_source
+
+
+@pytest.mark.asyncio
+async def test_move_data_source_not_found(storage: LocalStorage):
+    with pytest.raises(FileNotFoundError):
+        await storage.move_data("non_existent.bin", "dest.bin")
