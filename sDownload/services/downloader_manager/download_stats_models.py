@@ -1,3 +1,4 @@
+from typing import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import time
@@ -25,9 +26,33 @@ class ChunkDownloadStats:
     start_time: float = field(default_factory=time.monotonic)
     last_update: float = field(default_factory=time.monotonic)
     target_speed_bps: float = float("inf")
+    limit_qt_bytes: int = field(default=0, init=False)
+    _on_limit: Callable[[], None] | None = field(default=None, init=False)
 
-    def add_qt_bytes_downloaded(self, qt_bytes: int):
+    def __post_init__(self):
+        self.add_qt_bytes_downloaded = self._add_no_limit
+
+    def _add_no_limit(self, qt_bytes: int):
         self.bytes_downloaded += qt_bytes
+
+    def _add_with_limit(self, qt_bytes: int):
+        self.bytes_downloaded += qt_bytes
+        if self.bytes_downloaded >= self.limit_qt_bytes:
+            cb = self._on_limit
+            self._on_limit = None
+            self.add_qt_bytes_downloaded = self._add_no_limit
+            if cb:
+                cb()
+
+    def add_limit_observer(
+        self, qt_max_useful_bytes: int, callback: Callable[[], None]
+    ):
+        if self.bytes_downloaded >= qt_max_useful_bytes:
+            callback()
+            return
+        self.limit_qt_bytes = qt_max_useful_bytes
+        self._on_limit = callback
+        self.add_qt_bytes_downloaded = self._add_with_limit
 
     def set_status(self, status: EDownloadStatus):
         self.status = status
@@ -44,7 +69,6 @@ class ChunkDownloadStats:
             self.status = EDownloadStatus.COMPLETED
 
 
-# add status here ?
 @dataclass
 class DownloadStats:
     file_size: int
