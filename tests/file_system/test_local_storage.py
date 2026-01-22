@@ -222,3 +222,94 @@ async def test_move_data_overwrites_existing(storage: LocalStorage, tmp_path: Pa
 async def test_move_data_source_not_found(storage: LocalStorage):
     with pytest.raises(FileNotFoundError):
         await storage.move_data("non_existent.bin", "dest.bin")
+
+
+@pytest.mark.asyncio
+async def test_crop_file_head_and_tail(storage: LocalStorage):
+    key = "crop_test.bin"
+    # 0123456789 (indices)
+    data = b"abcdefghij"  # 10 bytes
+    await storage.save_binary_data(key, generate_chunks(data, default_test_chunk_size))
+
+    # Crop from index 2 to 7 -> "cdefgh" (6 bytes)
+    await storage.crop_file(key, 2, 7)
+
+    received = b""
+    async for chunk in storage.get_binary_data(key):
+        received += chunk
+    assert received == b"cdefgh"
+    assert len(received) == 6
+
+
+@pytest.mark.asyncio
+async def test_crop_file_only_head(storage: LocalStorage):
+    key = "crop_head.bin"
+    data = b"0123456789"
+    await storage.save_binary_data(key, generate_chunks(data, default_test_chunk_size))
+
+    # Crop from index 3 to the end -> "3456789"
+    await storage.crop_file(key, 3, 9)
+
+    received = b""
+    async for chunk in storage.get_binary_data(key):
+        received += chunk
+    assert received == b"3456789"
+
+
+@pytest.mark.asyncio
+async def test_crop_file_only_tail(storage: LocalStorage):
+    key = "crop_tail.bin"
+    data = b"0123456789"
+    await storage.save_binary_data(key, generate_chunks(data, default_test_chunk_size))
+
+    # Crop from index 0 to 4 -> "01234" (Delegates to shrink_file_to)
+    await storage.crop_file(key, 0, 4)
+
+    received = b""
+    async for chunk in storage.get_binary_data(key):
+        received += chunk
+    assert received == b"01234"
+
+
+@pytest.mark.asyncio
+async def test_crop_file_validation_negative_values(storage: LocalStorage):
+    key = "neg_test.bin"
+    await storage.save_binary_data(
+        key, generate_chunks(b"0123456789", default_test_chunk_size)
+    )
+
+    with pytest.raises(
+        ValueError,
+    ):
+        await storage.crop_file(key, -1, 5)
+
+    with pytest.raises(
+        ValueError,
+    ):
+        await storage.crop_file(key, 0, -1)
+
+    with pytest.raises(
+        ValueError,
+    ):
+        await storage.crop_file(key, 5, 4)
+
+
+@pytest.mark.asyncio
+async def test_crop_file_validation_out_of_bounds(storage: LocalStorage):
+    key = "bound_test.bin"
+    data = b"0123456789"  # 10 bytes
+    await storage.save_binary_data(key, generate_chunks(data, 2))
+
+    # End byte 10 is out of bounds for a 10-byte file (indices 0-9)
+    with pytest.raises(ValueError):
+        await storage.crop_file(key, 0, 10)
+
+
+@pytest.mark.asyncio
+async def test_crop_file_validation_invalid_range(storage: LocalStorage):
+    key = "range_test.bin"
+    await storage.save_binary_data(key, generate_chunks(b"0123456789", 2))
+
+    # start_byte > end_byte results in target_size <= 0
+    with pytest.raises(ValueError):
+        await storage.crop_file(key, 5, 4)

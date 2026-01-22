@@ -100,3 +100,50 @@ class LocalStorage(FileStorageProtocol):
             raise FileNotFoundError(f"{source_key} not found in storage")
 
         await aiofiles.os.replace(source_path, dest_path)
+
+    async def crop_file(self, key: str, start_byte: int, end_byte: int) -> None:
+        target_size = end_byte - start_byte + 1
+        path = self.storage_dir / key
+        current_size = path.stat().st_size
+
+        if target_size < 0 or end_byte < 0 or start_byte < 0 or start_byte > end_byte:
+            raise ValueError(
+                "Parameters must be greater than 0 and start byte must be less than end byte"
+            )
+
+        if end_byte >= current_size:
+            raise ValueError("End byte must be less than current size")
+
+        if start_byte == 0:
+            return await self.shrink_file_to(key, target_size)
+
+        if not path.exists():
+            raise FileNotFoundError(f"File {key} not found for cropping")
+
+        async with aiofiles.open(path, "r+b") as f:
+            buffer_size = 1024 * 1024  # 1MB
+            full_blocks = target_size // buffer_size
+            remainder = target_size % buffer_size
+
+            write_pos = 0
+            read_pos = start_byte
+
+            for _ in range(full_blocks):
+                await f.seek(read_pos)
+                data = await f.read(buffer_size)
+
+                await f.seek(write_pos)
+                await f.write(data)
+
+                read_pos += buffer_size
+                write_pos += buffer_size
+
+            if remainder > 0:
+                await f.seek(read_pos)
+                data = await f.read(remainder)
+                await f.seek(write_pos)
+                await f.write(data)
+
+            await f.truncate(target_size)
+            await f.flush()
+            await asyncio.to_thread(os.fsync, f.fileno())

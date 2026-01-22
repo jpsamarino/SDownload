@@ -72,3 +72,14 @@ class FileStorageProtocol(Protocol):
         :return: An awaitable that completes once the shrink is complete.
         """
         ...
+
+    async def crop_file(self, key: str, start_byte: int, end_byte: int) -> None:
+        """
+        Crop a file to a specific range.
+
+        :param key: Key of the file to crop.
+        :param start_byte: Start byte of the range.
+        :param end_byte: End byte of the range.
+        :return: An awaitable that completes once the crop is complete.
+        """
+        ...
