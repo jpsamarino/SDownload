@@ -111,14 +111,14 @@ class LocalStorage(FileStorageProtocol):
                 "Parameters must be greater than 0 and start byte must be less than end byte"
             )
 
+        if not path.exists():
+            raise FileNotFoundError(f"File {key} not found for cropping")
+
         if end_byte >= current_size:
             raise ValueError("End byte must be less than current size")
 
         if start_byte == 0:
             return await self.shrink_file_to(key, target_size)
-
-        if not path.exists():
-            raise FileNotFoundError(f"File {key} not found for cropping")
 
         async with aiofiles.open(path, "r+b") as f:
             buffer_size = 1024 * 1024  # 1MB
