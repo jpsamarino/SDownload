@@ -8,6 +8,8 @@ from sDownload.interfaces.protocols.chunk_models import ChunkRange
 class EDownloadStatus(str, Enum):
     PENDING = "pending"
     DOWNLOADING = "downloading"
+    AWAITING_SUCCESSION = "awaiting_succession"
+    DEPRECATED = "deprecated"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     ERROR = "error"
@@ -17,10 +19,10 @@ class EDownloadStatus(str, Enum):
 class ChunkDownloadStats:
     chunk_file_name: str
     range: ChunkRange
-    file_size: int
+    file_size: int | None
     bytes_downloaded: int = 0
     qt_bytes_last_update: int = 0
-    progress: float = 0.0
+    progress: float | None = None
     speed_bps: float = 0.0
     status: EDownloadStatus = EDownloadStatus.PENDING
     start_time: float = field(default_factory=time.monotonic)
@@ -54,6 +56,11 @@ class ChunkDownloadStats:
         self._on_limit = callback
         self.add_qt_bytes_downloaded = self._add_with_limit
 
+    def remove_limit_observer(self):
+        self._on_limit = None
+        self.limit_qt_bytes = 0
+        self.add_qt_bytes_downloaded = self._add_no_limit
+
     def set_status(self, status: EDownloadStatus):
         self.status = status
 
@@ -62,16 +69,18 @@ class ChunkDownloadStats:
         self.qt_bytes_last_update = self.bytes_downloaded
         now = time.monotonic()
         time_elapsed = now - self.last_update
-        self.progress = 100.0 * self.bytes_downloaded / self.file_size
-        self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0
+        self.progress = (
+            100.0 * self.bytes_downloaded / self.file_size if self.file_size else None
+        )
+        self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0.0
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
-        if self.progress >= 100.0:
+        if self.progress is not None and self.progress >= 100.0:
             self.status = EDownloadStatus.COMPLETED
 
 
 @dataclass
 class DownloadStats:
-    file_size: int
+    file_size: int  # fix to None
     bytes_downloaded: int = 0
     qt_bytes_last_update: int = 0
     progress: float = 0.0
@@ -87,6 +96,7 @@ class DownloadStats:
         self.bytes_downloaded = qt_bytes
 
     def update(self):
+        # use EMA and solve problem with speed_bps when set_bytes_downloaded is used to avoid negative speed
         now = time.monotonic()
         time_elapsed_avg = now - self.start_time
         self.progress = 100.0 * self.bytes_downloaded / self.file_size
