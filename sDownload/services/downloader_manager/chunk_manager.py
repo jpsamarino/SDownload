@@ -42,7 +42,9 @@ class ChunkManager:
             if chunk_range.end is not None
             else (self._cfg.file_size - 1) if self._cfg.file_size is not None else None
         )
-        file_size = end_byte - chunk_range.start + 1
+        file_size = (
+            end_byte - chunk_range.start + 1
+        )  # se file size for none ?? if end_byte is not None else None
         stats = ChunkDownloadStats(
             chunk_file_name=name,
             range=chunk_range,
@@ -63,7 +65,9 @@ class ChunkManager:
             )
             tracked = throttle_and_track_async_stream(raw_it, stats)
             await self._storage.save_binary_data(name, tracked)
-            if stats.bytes_downloaded != file_size:
+            if (
+                stats.bytes_downloaded != file_size
+            ):  # se file size for none ?? if end_byte is not None else None
                 raise IOError(
                     f"Chunk size error: expected {file_size} bytes, got {stats.bytes_downloaded} bytes"
                 )
@@ -143,6 +147,10 @@ class ChunkManager:
 
         if self._monitor_task is None or self._monitor_task.done():
             self._monitor_task = asyncio.create_task(self._monitor_loop())
+
+    def resize_chunk(self, current_range: ChunkRange, new_range: ChunkRange) -> None:
+        # used to finish a chunk in specific range and create a new chunk with the progress of the old chunk
+        ...
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 
