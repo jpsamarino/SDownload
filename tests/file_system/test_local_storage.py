@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import asyncio
 import pytest
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
@@ -313,3 +314,38 @@ async def test_crop_file_validation_invalid_range(storage: LocalStorage):
     # start_byte > end_byte results in target_size <= 0
     with pytest.raises(ValueError):
         await storage.crop_file(key, 5, 4)
+
+
+@pytest.mark.asyncio
+async def test_save_binary_data_cancellation_safety(storage: LocalStorage):
+    key = "cancel_lock.bin"
+
+    async def slow_generator():
+        yield b"thisIsATestVeryLongStringAndShouldTakeSomeTimeToWrite"
+        await asyncio.sleep(0.5)  # Simulate network delay/work
+        yield b"RandomPayloadToTakeMoreTime"
+        yield b"footer"
+
+    # Start saving in a task
+    task = asyncio.create_task(storage.save_binary_data(key, slow_generator()))
+
+    # Wait for the first yield to be written
+    await asyncio.sleep(0.1)
+
+    # Cancel the task while it's sleeping in slow_generator
+    task.cancel()
+
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Now verify we can immediately CROP or MOVE the file without block file lock
+    # If the finally/close didn't work, this would raise PermissionError on Windows
+    await storage.crop_file(key, 0, 3)  # Keep only "head"
+
+    content = b""
+    async for chunk in storage.get_binary_data(key):
+        content += chunk
+
+    assert content == b"this"

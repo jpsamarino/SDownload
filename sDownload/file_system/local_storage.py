@@ -33,10 +33,12 @@ class LocalStorage(FileStorageProtocol):
     async def save_binary_data(self, key: str, data: AsyncIterable[bytes]) -> None:
         path = self.storage_dir / key
         async with aiofiles.open(path, "wb") as f:
-            async for chunk in data:
-                await f.write(chunk)
-            await f.flush()
-            await asyncio.to_thread(os.fsync, f.fileno())
+            try:
+                async for chunk in data:
+                    await f.write(chunk)
+            finally:
+                await f.flush()
+                await asyncio.to_thread(os.fsync, f.fileno())
 
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
@@ -62,18 +64,20 @@ class LocalStorage(FileStorageProtocol):
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         dest_path = self.storage_dir / dest_key
         async with aiofiles.open(dest_path, "wb") as dest_file:
-            for key in source_keys:
-                src_path = self.storage_dir / key
-                if not src_path.exists():
-                    raise FileNotFoundError(f"{key} not found in storage")
-                async with aiofiles.open(src_path, "rb") as src_file:
-                    while True:
-                        chunk = await src_file.read(self.chunk_size)
-                        if not chunk:
-                            break
-                        await dest_file.write(chunk)
-            await dest_file.flush()
-            await asyncio.to_thread(os.fsync, dest_file.fileno())
+            try:
+                for key in source_keys:
+                    src_path = self.storage_dir / key
+                    if not src_path.exists():
+                        raise FileNotFoundError(f"{key} not found in storage")
+                    async with aiofiles.open(src_path, "rb") as src_file:
+                        while True:
+                            chunk = await src_file.read(self.chunk_size)
+                            if not chunk:
+                                break
+                            await dest_file.write(chunk)
+            finally:
+                await dest_file.flush()
+                await asyncio.to_thread(os.fsync, dest_file.fileno())
 
     async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
         path = self.storage_dir / key
@@ -128,22 +132,23 @@ class LocalStorage(FileStorageProtocol):
             write_pos = 0
             read_pos = start_byte
 
-            for _ in range(full_blocks):
-                await f.seek(read_pos)
-                data = await f.read(buffer_size)
+            try:
+                for _ in range(full_blocks):
+                    await f.seek(read_pos)
+                    data = await f.read(buffer_size)
 
-                await f.seek(write_pos)
-                await f.write(data)
+                    await f.seek(write_pos)
+                    await f.write(data)
 
-                read_pos += buffer_size
-                write_pos += buffer_size
+                    read_pos += buffer_size
+                    write_pos += buffer_size
 
-            if remainder > 0:
-                await f.seek(read_pos)
-                data = await f.read(remainder)
-                await f.seek(write_pos)
-                await f.write(data)
-
-            await f.truncate(target_size)
-            await f.flush()
-            await asyncio.to_thread(os.fsync, f.fileno())
+                if remainder > 0:
+                    await f.seek(read_pos)
+                    data = await f.read(remainder)
+                    await f.seek(write_pos)
+                    await f.write(data)
+            finally:
+                await f.truncate(target_size)
+                await f.flush()
+                await asyncio.to_thread(os.fsync, f.fileno())
