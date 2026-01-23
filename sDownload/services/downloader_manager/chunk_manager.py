@@ -42,9 +42,8 @@ class ChunkManager:
             if chunk_range.end is not None
             else (self._cfg.file_size - 1) if self._cfg.file_size is not None else None
         )
-        file_size = (
-            end_byte - chunk_range.start + 1
-        )  # se file size for none ?? if end_byte is not None else None
+        file_size = end_byte - chunk_range.start + 1 if end_byte is not None else None
+
         stats = ChunkDownloadStats(
             chunk_file_name=name,
             range=chunk_range,
@@ -65,9 +64,7 @@ class ChunkManager:
             )
             tracked = throttle_and_track_async_stream(raw_it, stats)
             await self._storage.save_binary_data(name, tracked)
-            if (
-                stats.bytes_downloaded != file_size
-            ):  # se file size for none ?? if end_byte is not None else None
+            if file_size is not None and stats.bytes_downloaded != file_size:
                 raise IOError(
                     f"Chunk size error: expected {file_size} bytes, got {stats.bytes_downloaded} bytes"
                 )
@@ -82,9 +79,6 @@ class ChunkManager:
         except Exception as e:
             stats.set_status(EDownloadStatus.ERROR)
             self._logger.warning("[%s] failed: %s", name, e)
-            stats.bytes_downloaded = 0
-            stats.start_time = time.monotonic()
-            stats.last_update = stats.start_time
             raise
 
         finally:
