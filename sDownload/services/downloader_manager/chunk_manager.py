@@ -331,10 +331,14 @@ class ChunkManager:
         await asyncio.gather(*delete_tasks)
 
     async def cancel_all_chunks(self) -> None:
+        for task in self._chunks_tasks.values():
+            task.cancel()
+
         if self._chunks_tasks:
             await asyncio.gather(*self._chunks_tasks.values(), return_exceptions=True)
 
         self._chunks_tasks.clear()
+        self._succession.clear()
         self._check_stop_monitor()
 
     async def _wait_for_chunks(
