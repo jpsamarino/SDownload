@@ -15,6 +15,15 @@ async def generate_chunks(data: bytes, chunk_size: int):
 default_test_chunk_size = 4
 
 
+async def huge_stream(total_bytes: int, chunk_size: int = 64 * 1024):
+    sent = 0
+    chunk = b"x" * chunk_size
+    while sent < total_bytes:
+        remaining = total_bytes - sent
+        yield chunk if remaining >= chunk_size else chunk[:remaining]
+        sent += chunk_size
+
+
 @pytest.fixture
 def storage(tmp_path: str):
     return LocalStorage(storage_dir=tmp_path, chunk_size=default_test_chunk_size)
@@ -349,3 +358,45 @@ async def test_save_binary_data_cancellation_safety(storage: LocalStorage):
         content += chunk
 
     assert content == b"this"
+
+
+@pytest.mark.asyncio
+async def test_save_binary_data_cancellation_keeps_written_data(
+    storage, tmp_path: Path
+):
+    key = "huge_cancel_test.bin"
+
+    TOTAL_BYTES = 200 * 1024 * 1024  # 200 MB
+    CHUNK_SIZE = 64 * 1024
+
+    cancel_after_bytes = 50 * 1024 * 1024  # cancel after 50MB
+
+    bytes_sent = 0
+    cancel_event = asyncio.Event()
+
+    async def controlled_stream():
+        nonlocal bytes_sent
+        async for chunk in huge_stream(TOTAL_BYTES, CHUNK_SIZE):
+            bytes_sent += len(chunk)
+            if bytes_sent >= cancel_after_bytes:
+                cancel_event.set()
+            yield chunk
+
+    save_task = asyncio.create_task(storage.save_binary_data(key, controlled_stream()))
+
+    await cancel_event.wait()
+    save_task.cancel()
+
+    try:
+        await save_task
+    except asyncio.CancelledError:
+        pass
+    await asyncio.sleep(0.1)
+
+    path = tmp_path / key
+    assert path.exists()
+
+    file_size = path.stat().st_size
+
+    assert file_size > 0
+    assert file_size == bytes_sent
