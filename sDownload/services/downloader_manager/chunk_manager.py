@@ -372,7 +372,7 @@ class ChunkManager:
                             self._cfg.file_name,
                             chunk_range,
                             e,
-                            exc_info=True,
+                            exc_info=False,
                         )
 
             for stats in completed:
