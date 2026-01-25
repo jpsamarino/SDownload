@@ -35,7 +35,7 @@ class LocalStorage(FileStorageProtocol):
         async with aiofiles.open(path, "wb") as f:
             try:
                 async for chunk in data:
-                    await f.write(chunk)
+                    await asyncio.shield(f.write(chunk))
             finally:
                 await f.flush()
                 await asyncio.to_thread(os.fsync, f.fileno())
@@ -74,7 +74,7 @@ class LocalStorage(FileStorageProtocol):
                             chunk = await src_file.read(self.chunk_size)
                             if not chunk:
                                 break
-                            await dest_file.write(chunk)
+                            await asyncio.shield(dest_file.write(chunk))
             finally:
                 await dest_file.flush()
                 await asyncio.to_thread(os.fsync, dest_file.fileno())
