@@ -149,23 +149,31 @@ class ChunkManager:
             self._monitor_task = asyncio.create_task(self._monitor_loop())
 
     def resize_chunk(self, current_range: ChunkRange, new_range: ChunkRange) -> None:
-        """
-        Redefine the limits of a downloading chunk.
-        The new range (successor) inherits the data from the current range (predecessor).
-        """
-        # 1. Validation using __contains__
         if new_range not in current_range:
             raise ValueError(
                 f"New range {new_range} must be contained within {current_range}"
             )
 
         if current_range not in self._chunks_stats:
-            raise KeyError(f"Range {current_range} not found in active chunks")
+            if current_range not in self._chunks_tasks:
+                raise KeyError(f"Range {current_range} not found in active chunks")
+            raise ValueError(
+                f"Is necessary wait for range {current_range} init to resize"
+            )
 
         if new_range == current_range:
             return
 
         stats_a = self._chunks_stats[current_range]
+
+        if stats_a.status not in (
+            EDownloadStatus.PENDING,
+            EDownloadStatus.DOWNLOADING,
+            EDownloadStatus.COMPLETED,
+        ):
+            raise ValueError(
+                f"Range {current_range} is not in DOWNLOADING or COMPLETED state"
+            )
 
         stats_b = ChunkDownloadStats(
             chunk_file_name=f"{new_range}_{self._cfg.file_name}.sdownload",
@@ -186,15 +194,31 @@ class ChunkManager:
 
             def stop_predecessor():
                 task_a = self._chunks_tasks.get(current_range)
-                if task_a and not task_a.done():
+                task_a_stats = self._chunks_stats.get(current_range)
+                if (
+                    task_a
+                    and not task_a.done()
+                    and task_a_stats.bytes_downloaded != task_a_stats.file_size
+                ):
                     self._logger.info(
                         "Limit reached for %s. Triggering succession to %s.",
                         current_range,
                         new_range,
                     )
                     task_a.cancel()
+                elif task_a_stats.bytes_downloaded == task_a_stats.file_size:
+                    self._logger.info(
+                        "Task %s completed. Triggering succession to %s.",
+                        current_range,
+                        new_range,
+                    )
+                    task_a.cancel()
 
-            stats_a.add_limit_observer(limit, stop_predecessor)
+            if stats_a.status in (
+                EDownloadStatus.PENDING,
+                EDownloadStatus.DOWNLOADING,
+            ):
+                stats_a.add_limit_observer(limit, stop_predecessor)
 
         self._chunks_tasks[new_range] = asyncio.create_task(
             self._run_succession(current_range, new_range)
@@ -246,6 +270,7 @@ class ChunkManager:
             )
 
             stats_b.set_status(EDownloadStatus.COMPLETED)
+            stats_a.set_status(EDownloadStatus.DEPRECATED)
             stats_b.bytes_downloaded = end_crop - start_crop + 1
             self._logger.info("Succession complete: %s is now COMPLETED.", successor)
 
@@ -314,7 +339,7 @@ class ChunkManager:
         return sum(
             s.bytes_downloaded
             for s in self._chunks_stats.values()
-            if s.status not in (EDownloadStatus.ERROR, EDownloadStatus.CANCELLED)
+            if s.status in (EDownloadStatus.COMPLETED, EDownloadStatus.DOWNLOADING)
         )
 
     async def cleanup_temp_files(self) -> None:
@@ -366,6 +391,8 @@ class ChunkManager:
                     completed.append(self._chunks_stats[chunk_range])
                     try:
                         _ = task.result()
+                    except asyncio.CancelledError:
+                        self._logger.info("Chunk %s cancelled by asyncio", chunk_range)
                     except Exception as e:
                         self._logger.warning(
                             "%s: Chunk %s failed: %s",
