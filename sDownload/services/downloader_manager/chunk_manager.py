@@ -208,11 +208,10 @@ class ChunkManager:
                     task_a.cancel()
                 elif task_a_stats.bytes_downloaded == task_a_stats.file_size:
                     self._logger.info(
-                        "Task %s completed. Triggering succession to %s.",
+                        "Task %s finished after limit. It will be succession to %s.",
                         current_range,
                         new_range,
                     )
-                    task_a.cancel()
 
             if stats_a.status in (
                 EDownloadStatus.PENDING,
@@ -280,6 +279,7 @@ class ChunkManager:
             stats_b.set_status(EDownloadStatus.CANCELLED)
             if task_a and not task_a.done():
                 task_a.cancel()
+                await task_a
             stats_a.remove_limit_observer()
             raise
 
@@ -296,7 +296,11 @@ class ChunkManager:
 
         if chunk_range in self._chunks_tasks:
             self._chunks_stats[chunk_range].update()
-            if self._chunks_stats[chunk_range].status == EDownloadStatus.DOWNLOADING:
+            if self._chunks_stats[chunk_range].status in (
+                EDownloadStatus.DOWNLOADING,
+                EDownloadStatus.PENDING,
+                EDownloadStatus.AWAITING_SUCCESSION,
+            ):
                 self._chunks_tasks[chunk_range].cancel()
                 try:
                     await self._chunks_tasks[chunk_range]
@@ -311,6 +315,8 @@ class ChunkManager:
                 self._chunks_stats[chunk_range].status,
             )
             return False
+
+    async def delete_finished_chunk(self, chunk_range: ChunkRange) -> None: ...
 
     def get_active_chunks(self) -> list[ChunkRange]:
         return list(self._chunks_tasks.keys())
