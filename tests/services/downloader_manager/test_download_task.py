@@ -134,7 +134,7 @@ async def test_httpx_and_dowload_task_real_n(storage):
     # result_list = await downloader.get_file_info(f"https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM")
     # result_list = await downloader.get_file_info(f"https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Estabelecimentos9.zip")
     result_list = await downloader.get_file_info(
-        f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_BA.zip"
+        f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_MG.zip"
     )
     result = result_list[0]
 
@@ -147,7 +147,7 @@ async def test_httpx_and_dowload_task_real_n(storage):
         file_created_at=datetime.utcnow(),
         protocol_data=None,
         max_connections_per_download=5,
-        max_speed_bytes_per_second=1024 * 100,
+        max_speed_bytes_per_second=1024 * 1024,
     )
 
     logger = logging.getLogger("download-task")
