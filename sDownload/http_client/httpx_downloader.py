@@ -81,15 +81,17 @@ class HttpxDownloader(DownloaderProtocol):
                     if file_id and etag != file_id:
                         raise FileIDMismatchError(file_id, etag)
 
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
+                    try:
+                        async for chunk in response.aiter_bytes():
+                            yield chunk
+                    except GeneratorExit:
+                        # verify if the download was cancelled
+                        return
 
-            except httpx.HTTPError as http_err:
-                raise DownloadRequestError(url, http_err) from http_err
+            except (httpx.HTTPError, IOError) as err:
+                raise DownloadRequestError(url, err) from err
             except FileIDMismatchError:
                 raise
-            except Exception as err:
-                raise DownloadRequestError(url, err) from err
 
     async def get_file_info(self, url: str) -> list[FileInfoModel]:
         try:
