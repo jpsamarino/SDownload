@@ -29,12 +29,3 @@ async def throttle_and_track_async_stream(
                 accumulated_bytes = 0
     finally:
         _logger.info("AsyncIterator finished - %s", stats.chunk_file_name)
-        stats.update()
-        try:
-            await it.aclose()
-        except (RuntimeError, AttributeError):
-            _logger.info(
-                "async iterator closed with aclose exception - %s",
-                stats.chunk_file_name,
-            )
-            pass
