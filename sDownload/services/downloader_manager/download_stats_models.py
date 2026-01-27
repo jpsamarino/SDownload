@@ -74,8 +74,6 @@ class ChunkDownloadStats:
         )
         self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0.0
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
-        if self.progress is not None and self.progress >= 100.0:
-            self.status = EDownloadStatus.COMPLETED
 
 
 @dataclass
