@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncIterable
 from unittest.mock import AsyncMock, MagicMock
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
@@ -19,31 +19,51 @@ from sDownload.services.downloader_manager.download_stats_models import EDownloa
 
 @pytest.fixture
 def storage(tmp_path: str):
-    return LocalStorage(storage_dir="./delet")
+    return LocalStorage(storage_dir=tmp_path)
+
+
+@pytest.fixture
+def setup_downloader_and_config(nginx_custom):
+    async def _setup(file_name="file_100k.bin", limit_speed=True):
+        path = "limited_speed" if limit_speed else "default"
+        config = HttpConfigModel(timeout_connect_s=20.0)
+        downloader = HttpxDownloader(config)
+        result_list = await downloader.get_file_info(
+            f"{nginx_custom['http']}/{path}/{file_name}"
+        )
+        result = result_list[0]
+
+        download_config = DownloadConfig(
+            file_name=result.file_name,
+            file_dir=result.file_dir,
+            file_size=result.file_size,
+            file_id=result.file_id,
+            download_url=result.download_url,
+            file_created_at=datetime.now(timezone.utc),
+            protocol_data=None,
+            max_connections_per_download=2,
+            max_speed_bytes_per_second=1024 * 1024,
+        )
+        return {
+            "config": config,
+            "downloader": downloader,
+            "result": result,
+            "download_config": download_config,
+        }
+
+    return _setup
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_with_nginx(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/default/file_100k.bin"
+async def test_chunk_manager_with_nginx(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
     )
-    result = result_list[0]
-    assert result.file_name == "file_100k.bin"
-    assert result.file_size == 102400
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,  # 1 MB/s limit
-    )
+    assert setup["result"].file_name == "file_100k.bin"
+    assert setup["result"].file_size == 102400
 
     logger = logging.getLogger("chunk_manager_test")
     logger.setLevel(logging.INFO)
@@ -67,25 +87,10 @@ async def test_chunk_manager_with_nginx(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_cancel_chunks(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_chunk_manager_cancel_chunks(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("chunk_manager_cancel_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -108,25 +113,12 @@ async def test_chunk_manager_cancel_chunks(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_wrong_partial_chunks_sizes(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_chunk_manager_wrong_partial_chunks_sizes(
+    setup_downloader_and_config, storage
+):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("chunk_manager_cancel_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -144,25 +136,10 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_cleanup_temp_files(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_chunk_manager_cleanup_temp_files(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("chunk_manager_cleanup_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -187,25 +164,10 @@ async def test_chunk_manager_cleanup_temp_files(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_stats_tracking(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_chunk_manager_stats_tracking(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("chunk_manager_stats_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -235,25 +197,11 @@ async def test_chunk_manager_stats_tracking(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_cancel_all_chunks(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_1M.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024,
-    )
+async def test_chunk_manager_cancel_all_chunks(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config(file_name="file_1M.bin")
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+    download_config.max_speed_bytes_per_second = 1024  # Override for this test
 
     logger = logging.getLogger("chunk_manager_cancel_all_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -274,25 +222,12 @@ async def test_chunk_manager_cancel_all_chunks(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_success_with_finished_chunks(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_resize_chunk_success_with_finished_chunks(
+    setup_downloader_and_config, storage
+):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("resize_chunk_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -327,25 +262,12 @@ async def test_resize_chunk_success_with_finished_chunks(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_success_with_downloading_chunks(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_resize_chunk_success_with_downloading_chunks(
+    setup_downloader_and_config, storage
+):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("resize_chunk_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -375,26 +297,10 @@ async def test_resize_chunk_success_with_downloading_chunks(nginx_custom, storag
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_prefix_range(nginx_custom, storage):
-
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_resize_chunk_prefix_range(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     chunk_manager = ChunkManager(download_config, downloader, storage)
 
@@ -420,25 +326,10 @@ async def test_resize_chunk_prefix_range(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_head_cut(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_resize_chunk_head_cut(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("resize_chunk_head_cut_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -466,25 +357,10 @@ async def test_resize_chunk_head_cut(nginx_custom, storage):
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_cancel_successor(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-
-    download_config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
+async def test_resize_chunk_cancel_successor(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config()
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
 
     logger = logging.getLogger("resize_chunk_cancel_test")
     chunk_manager = ChunkManager(download_config, downloader, storage, logger)
@@ -511,7 +387,6 @@ async def test_resize_chunk_cancel_successor(nginx_custom, storage):
 
 @pytest.mark.asyncio
 async def test_resize_chunk_validation_error():
-    """Test that resize_chunk raises ValueError for invalid ranges."""
     mock_downloader = MagicMock(spec=DownloaderProtocol)
     mock_storage = MagicMock(spec=FileStorageProtocol)
 
@@ -529,11 +404,9 @@ async def test_resize_chunk_validation_error():
 
     chunk_manager = ChunkManager(download_config, mock_downloader, mock_storage)
 
-    # Try to resize a non-existent chunk
     with pytest.raises(KeyError):
         chunk_manager.resize_chunk(ChunkRange(0, 100), ChunkRange(0, 50))
 
-    # Create a mock stats entry
     from sDownload.services.downloader_manager.download_stats_models import (
         ChunkDownloadStats,
     )
@@ -544,10 +417,8 @@ async def test_resize_chunk_validation_error():
         file_size=101,
     )
 
-    # Try to resize with a range that extends beyond the original
     with pytest.raises(ValueError):
         chunk_manager.resize_chunk(ChunkRange(0, 100), ChunkRange(0, 200))
 
-    # Try to resize with a range that starts before the original
     with pytest.raises(ValueError):
         chunk_manager.resize_chunk(ChunkRange(50, 100), ChunkRange(40, 80))
