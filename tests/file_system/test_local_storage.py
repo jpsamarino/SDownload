@@ -3,7 +3,10 @@ from pathlib import Path
 import asyncio
 import pytest
 from sDownload.file_system.local_storage import LocalStorage
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.protocols.file_storage_protocol import (
+    FileRangeConfig,
+    FileStorageProtocol,
+)
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
 
@@ -400,3 +403,74 @@ async def test_save_binary_data_cancellation_keeps_written_data(
 
     assert file_size > 0
     assert file_size == bytes_sent
+
+
+@pytest.mark.asyncio
+async def test_merge_ranges_basic(storage: LocalStorage):
+    # Test identifying normal merge (full files)
+    await storage.save_binary_data("p1.bin", generate_chunks(b"0123", 2))
+    await storage.save_binary_data("p2.bin", generate_chunks(b"4567", 2))
+
+    configs = [
+        FileRangeConfig(key="p1.bin", start_byte=0, end_byte=3),
+        FileRangeConfig(key="p2.bin", start_byte=0, end_byte=3),
+    ]
+    await storage.merge_ranges(configs, "merged.bin")
+
+    received = b""
+    async for chunk in storage.get_binary_data("merged.bin"):
+        received += chunk
+    assert received == b"01234567"
+
+
+@pytest.mark.asyncio
+async def test_merge_ranges_with_offsets(storage: LocalStorage):
+    # Scenario: Chunk A (0-10) and Chunk B (5-15)
+    # We want bytes 0-10 from A and 11-15 from B
+    data_a = b"abcdefghijk"  # 0-10
+    data_b = b"fghijklmnop"  # 5-15 (starts at global 5)
+
+    await storage.save_binary_data("a.bin", generate_chunks(data_a, 4))
+    await storage.save_binary_data("b.bin", generate_chunks(data_b, 4))
+
+    # Global 11 is index 6 inside B (11 - 5 = 6)
+    # Byte 6 of "fghijklmnop" is 'l'
+    # Bytes 6-10 of B are "lmnop"
+    configs = [
+        FileRangeConfig(key="a.bin", start_byte=0, end_byte=10),
+        FileRangeConfig(key="b.bin", start_byte=6, end_byte=10),
+    ]
+    await storage.merge_ranges(configs, "smart_merged.bin")
+
+    received = b""
+    async for chunk in storage.get_binary_data("smart_merged.bin"):
+        received += chunk
+    assert received == b"abcdefghijklmnop"
+
+
+@pytest.mark.asyncio
+async def test_merge_ranges_optional_params(storage: LocalStorage):
+    await storage.save_binary_data("p1.bin", generate_chunks(b"0123456789", 4))
+    await storage.save_binary_data("p2.bin", generate_chunks(b"abcdefghij", 4))
+
+    configs = [
+        FileRangeConfig(key="p1.bin", end_byte=4),  # 0 to 4 -> "01234"
+        FileRangeConfig(key="p2.bin", start_byte=5),  # 5 to end -> "fghij"
+    ]
+    await storage.merge_ranges(configs, "optional.bin")
+
+    received = b""
+    async for chunk in storage.get_binary_data("optional.bin"):
+        received += chunk
+    assert received == b"01234fghij"
+
+
+@pytest.mark.asyncio
+async def test_merge_ranges_invalid_range_raises_error(storage: LocalStorage):
+    await storage.save_binary_data("p1.bin", generate_chunks(b"012345", 2))
+
+    configs = [
+        FileRangeConfig(key="p1.bin", start_byte=5, end_byte=2),
+    ]
+    with pytest.raises(ValueError, match="Invalid range"):
+        await storage.merge_ranges(configs, "error.bin")

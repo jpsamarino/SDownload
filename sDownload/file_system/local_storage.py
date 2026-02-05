@@ -5,7 +5,10 @@ from datetime import datetime
 import aiofiles
 import aiofiles.os
 import os
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.protocols.file_storage_protocol import (
+    FileRangeConfig,
+    FileStorageProtocol,
+)
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
 
 
@@ -74,22 +77,55 @@ class LocalStorage(FileStorageProtocol):
         return await asyncio.to_thread(blocking_list)
 
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
+        configs = [FileRangeConfig(key=k) for k in source_keys]
+        await self.merge_ranges(configs, dest_key)
+
+    async def merge_ranges(
+        self, source_configs: list[FileRangeConfig], dest_key: str
+    ) -> None:
         dest_path = self.storage_dir / dest_key
         operation_buffer_size = self.io_buffer_size
+
         async with aiofiles.open(dest_path, "wb") as dest_file:
             try:
-                for key in source_keys:
-                    src_path = self.storage_dir / key
+                for config in source_configs:
+                    src_path = self.storage_dir / config.key
                     if not await aiofiles.os.path.exists(src_path):
                         raise FileNotFoundError(
-                            f"Merge operation failed: source {key} not found at {src_path}"
+                            f"Merge operation failed: source {config.key} not found at {src_path}"
                         )
+
                     async with aiofiles.open(src_path, "rb") as src_file:
+                        if config.start_byte is not None and config.start_byte > 0:
+                            await src_file.seek(config.start_byte)
+
+                        remaining_to_read = None
+                        if config.end_byte is not None:
+                            start = config.start_byte or 0
+                            remaining_to_read = config.end_byte - start + 1
+                            if remaining_to_read < 0:
+                                raise ValueError(
+                                    f"Invalid range for {config.key}: start {start}, end {config.end_byte}"
+                                )
+
                         while True:
-                            chunk = await src_file.read(operation_buffer_size)
+                            read_size = operation_buffer_size
+                            if (
+                                remaining_to_read is not None
+                                and remaining_to_read < read_size
+                            ):
+                                read_size = remaining_to_read
+
+                            chunk = await src_file.read(read_size)
                             if not chunk:
                                 break
+
                             await asyncio.shield(dest_file.write(chunk))
+
+                            if remaining_to_read is not None:
+                                remaining_to_read -= len(chunk)
+                                if remaining_to_read <= 0:
+                                    break
             finally:
                 await dest_file.flush()
                 await asyncio.to_thread(os.fsync, dest_file.fileno())

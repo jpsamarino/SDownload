@@ -1,6 +1,12 @@
 from collections.abc import AsyncIterable
-from typing import Protocol
+from typing import Protocol, NamedTuple
 from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
+
+
+class FileRangeConfig(NamedTuple):
+    key: str
+    start_byte: int | None = None
+    end_byte: int | None = None
 
 
 class FileStorageProtocol(Protocol):
@@ -60,6 +66,17 @@ class FileStorageProtocol(Protocol):
         :param source_keys: List of keys of the source files.
         :param dest_key: Key of the destination file.
         :return: An awaitable that completes once the merge is complete.
+        """
+        ...
+
+    async def merge_ranges(
+        self, source_configs: list[FileRangeConfig], dest_key: str
+    ) -> None:
+        """
+        Merge specific ranges of multiple files into a single destination file.
+
+        :param source_configs: List of FileRangeConfig specifying which parts of which files to merge.
+        :param dest_key: Key of the destination file.
         """
         ...
 
