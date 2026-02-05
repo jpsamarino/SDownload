@@ -369,7 +369,32 @@ class ChunkManager:
 
         return False
 
-    async def delete_finished_chunk(self, chunk_range: ChunkRange) -> None: ...
+    async def remove_chunk(self, chunk_range: ChunkRange) -> None:
+        if chunk_range in self._chunks_tasks:
+            self._logger.info(
+                "Cancelling active task for chunk %s before removal.", chunk_range
+            )
+            await self.cancel_chunk(chunk_range)
+
+        stats = self._chunks_stats.pop(chunk_range, None)
+
+        if stats:
+            self._logger.info(
+                "Removing chunk %s: deleting file %s",
+                chunk_range,
+                stats.chunk_file_name,
+            )
+            try:
+                await self._storage.delete_data(stats.chunk_file_name)
+            except Exception as e:
+                self._logger.warning(
+                    "Failed to delete file %s for chunk %s: %s",
+                    stats.chunk_file_name,
+                    chunk_range,
+                    e,
+                )
+        else:
+            self._logger.warning("No stats found for chunk %s to remove.", chunk_range)
 
     def get_active_chunks(self) -> list[ChunkRange]:
         return list(self._chunks_tasks.keys())

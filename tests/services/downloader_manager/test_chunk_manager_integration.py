@@ -422,3 +422,57 @@ async def test_resize_chunk_validation_error():
 
     with pytest.raises(ValueError):
         chunk_manager.resize_chunk(ChunkRange(50, 100), ChunkRange(40, 80))
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_remove_chunk_integration(
+    setup_downloader_and_config, storage
+):
+    setup = await setup_downloader_and_config(file_name="file_1M.bin")
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    logger = logging.getLogger("chunk_manager_remove_test")
+    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+
+    range_1 = ChunkRange(0, 102399)  # 100KB
+    range_2 = ChunkRange(102400, 204799)  # 100KB
+
+    chunk_manager.start_chunk(range_1)
+    chunk_manager.start_chunk(range_2)
+
+    # Wait for some data to be downloaded
+    await asyncio.sleep(0.1)
+
+    stats_1 = chunk_manager.get_chunk_stats(range_1)
+    stats_2 = chunk_manager.get_chunk_stats(range_2)
+    file_1 = stats_1.chunk_file_name
+    file_2 = stats_2.chunk_file_name
+
+    # 1. Remove range_1 while downloading
+    await chunk_manager.remove_chunk(range_1)
+
+    assert range_1 not in chunk_manager.get_active_chunks()
+    assert chunk_manager.get_chunk_stats(range_1) is None
+
+    # Check file is deleted
+    listed_files = await storage.list_data()
+    listed_keys = [f.key for f in listed_files]
+    assert file_1 not in listed_keys
+
+    # 2. Wait for range_2 to complete
+    await chunk_manager.wait_for_completed_chunks()
+    assert chunk_manager.get_chunk_stats(range_2).status == EDownloadStatus.COMPLETED
+
+    # 3. Remove completed range_2
+    await chunk_manager.remove_chunk(range_2)
+    assert chunk_manager.get_chunk_stats(range_2) is None
+
+    listed_files_after = await storage.list_data()
+    listed_keys_after = [f.key for f in listed_files_after]
+    assert file_2 not in listed_keys_after
+
+    # Verify total downloaded bytes is 0 because all chunks were removed
+    assert chunk_manager.get_downloaded_bytes() == 0
+
+    await chunk_manager.cleanup_temp_files()

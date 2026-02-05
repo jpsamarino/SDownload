@@ -516,3 +516,71 @@ async def test_get_downloaded_bytes_status_filter(
 
     total = manager.get_downloaded_bytes()
     assert total == 11 + 5  # Only Completed and Downloading
+
+
+@pytest.mark.asyncio
+async def test_remove_chunk_active_cancels_and_cleans(
+    download_config, mock_downloader, mock_storage
+):
+    manager = ChunkManager(download_config, mock_downloader, mock_storage)
+    range_ = ChunkRange(0, 100)
+
+    async def slow_download(chunk_range):
+        manager._chunks_tasks[chunk_range].init_signal.set()
+        await asyncio.sleep(5.0)
+        return chunk_range
+
+    manager._download_chunk = slow_download
+
+    # Mock storage.delete_data to track calls
+    mock_storage.delete_data = AsyncMock()
+
+    manager.start_chunk(range_)
+    # Give it a tiny moment to start the task
+    await asyncio.sleep(0.01)
+
+    task_context = manager._chunks_tasks[range_]
+    assert not task_context.task.done()
+
+    await manager.remove_chunk(range_)
+
+    assert range_ not in manager._chunks_tasks
+    assert range_ not in manager._chunks_stats
+    assert task_context.task.cancelled() or task_context.task.done()
+    mock_storage.delete_data.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_chunk_completed_cleans_up(
+    download_config, mock_downloader, mock_storage
+):
+    manager = ChunkManager(download_config, mock_downloader, mock_storage)
+    range_ = ChunkRange(0, 100)
+    mock_storage.delete_data = AsyncMock()
+
+    # Manually add completed stats
+    manager._chunks_stats[range_] = ChunkDownloadStats(
+        chunk_file_name="test_chunk.sdownload",
+        range=range_,
+        file_size=101,
+        status=EDownloadStatus.COMPLETED,
+    )
+
+    await manager.remove_chunk(range_)
+
+    assert range_ not in manager._chunks_stats
+    mock_storage.delete_data.assert_called_once_with("test_chunk.sdownload")
+
+
+@pytest.mark.asyncio
+async def test_remove_chunk_non_existent_is_safe(
+    download_config, mock_downloader, mock_storage, caplog
+):
+    manager = ChunkManager(download_config, mock_downloader, mock_storage)
+    range_ = ChunkRange(999, 9999)
+
+    with caplog.at_level(logging.WARNING):
+        await manager.remove_chunk(range_)
+
+    # Should not raise, just log warning
+    assert "No stats found for chunk" in caplog.text
