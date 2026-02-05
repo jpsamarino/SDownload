@@ -10,19 +10,26 @@ from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoM
 
 
 class LocalStorage(FileStorageProtocol):
-    def __init__(self, storage_dir: Path | str = "storage", chunk_size: int = 8 * 1024):
+    def __init__(
+        self,
+        storage_dir: Path | str = "storage",
+        chunk_size: int = 8 * 1024,
+        io_buffer_size: int = 1024 * 1024,  # 1MB for heavy operations
+    ):
         """
         :param storage_dir: path that will be used to store data.
-        :param chunk_size: size of the chunks in bytes.
+        :param chunk_size: size of the chunks in bytes for streaming.
+        :param io_buffer_size: size of the buffer for heavy I/O operations (crop/merge).
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.chunk_size = chunk_size
+        self.io_buffer_size = io_buffer_size
 
     async def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         path = self.storage_dir / key
-        if not path.exists():
-            raise FileNotFoundError(f"{key} not found in storage")
+        if not await aiofiles.os.path.exists(path):
+            raise FileNotFoundError(f"Read operation failed: {key} not found at {path}")
         async with aiofiles.open(path, "rb") as f:
             while True:
                 chunk = await f.read(self.chunk_size)
@@ -43,35 +50,43 @@ class LocalStorage(FileStorageProtocol):
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
         try:
-            path.unlink()
+            await aiofiles.os.remove(path)
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"{key} not found in storage: {path}") from e
+            raise FileNotFoundError(
+                f"Delete operation failed: {key} not found at {path}"
+            ) from e
 
     async def list_data(self) -> list[FileSystemInfoModel]:
-        files: list[FileSystemInfoModel] = []
-        for path in self.storage_dir.iterdir():
-            if not path.is_file():
-                continue
-            stat = path.stat()
-            info = FileSystemInfoModel(
-                key=path.name,
-                size_bytes=stat.st_size,
-                created_at=datetime.fromtimestamp(stat.st_ctime),
-            )
-            files.append(info)
-        return files
+        def blocking_list():
+            files: list[FileSystemInfoModel] = []
+            for path in self.storage_dir.iterdir():
+                if not path.is_file():
+                    continue
+                stat = path.stat()
+                info = FileSystemInfoModel(
+                    key=path.name,
+                    size_bytes=stat.st_size,
+                    created_at=datetime.fromtimestamp(stat.st_ctime),
+                )
+                files.append(info)
+            return files
+
+        return await asyncio.to_thread(blocking_list)
 
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         dest_path = self.storage_dir / dest_key
+        operation_buffer_size = self.io_buffer_size
         async with aiofiles.open(dest_path, "wb") as dest_file:
             try:
                 for key in source_keys:
                     src_path = self.storage_dir / key
-                    if not src_path.exists():
-                        raise FileNotFoundError(f"{key} not found in storage")
+                    if not await aiofiles.os.path.exists(src_path):
+                        raise FileNotFoundError(
+                            f"Merge operation failed: source {key} not found at {src_path}"
+                        )
                     async with aiofiles.open(src_path, "rb") as src_file:
                         while True:
-                            chunk = await src_file.read(self.chunk_size)
+                            chunk = await src_file.read(operation_buffer_size)
                             if not chunk:
                                 break
                             await asyncio.shield(dest_file.write(chunk))
@@ -81,10 +96,13 @@ class LocalStorage(FileStorageProtocol):
 
     async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
         path = self.storage_dir / key
-        if not path.exists():
-            raise FileNotFoundError(f"{key} not found in storage")
+        if not await aiofiles.os.path.exists(path):
+            raise FileNotFoundError(
+                f"Shrink operation failed: {key} not found at {path}"
+            )
 
-        current_size = path.stat().st_size
+        file_stat = await aiofiles.os.stat(path)
+        current_size = file_stat.st_size
         if target_size_bytes >= current_size:
             return
 
@@ -100,34 +118,40 @@ class LocalStorage(FileStorageProtocol):
         source_path = self.storage_dir / source_key
         dest_path = self.storage_dir / dest_key
 
-        if not source_path.exists():
-            raise FileNotFoundError(f"{source_key} not found in storage")
+        if not await aiofiles.os.path.exists(source_path):
+            raise FileNotFoundError(
+                f"Move operation failed: source {source_key} not found at {source_path}"
+            )
 
         await aiofiles.os.replace(source_path, dest_path)
 
     async def crop_file(self, key: str, start_byte: int, end_byte: int) -> None:
         target_size = end_byte - start_byte + 1
         path = self.storage_dir / key
-        current_size = path.stat().st_size
 
         if target_size < 0 or end_byte < 0 or start_byte < 0 or start_byte > end_byte:
             raise ValueError(
                 "Parameters must be greater than 0 and start byte must be less than end byte"
             )
 
-        if not path.exists():
-            raise FileNotFoundError(f"File {key} not found for cropping")
+        if not await aiofiles.os.path.exists(path):
+            raise FileNotFoundError(f"Crop operation failed: {key} not found at {path}")
+
+        file_stat = await aiofiles.os.stat(path)
+        current_size = file_stat.st_size
 
         if end_byte >= current_size:
-            raise ValueError("End byte must be less than current size")
+            raise ValueError(
+                f"Crop operation failed: end_byte {end_byte} exceeds file size {current_size}"
+            )
 
         if start_byte == 0:
             return await self.shrink_file_to(key, target_size)
 
         async with aiofiles.open(path, "r+b") as f:
-            buffer_size = 1024 * 1024  # 1MB
-            full_blocks = target_size // buffer_size
-            remainder = target_size % buffer_size
+            operation_buffer_size = self.io_buffer_size
+            full_blocks = target_size // operation_buffer_size
+            remainder = target_size % operation_buffer_size
 
             write_pos = 0
             read_pos = start_byte
@@ -135,13 +159,13 @@ class LocalStorage(FileStorageProtocol):
             try:
                 for _ in range(full_blocks):
                     await f.seek(read_pos)
-                    data = await f.read(buffer_size)
+                    data = await f.read(operation_buffer_size)
 
                     await f.seek(write_pos)
                     await f.write(data)
 
-                    read_pos += buffer_size
-                    write_pos += buffer_size
+                    read_pos += operation_buffer_size
+                    write_pos += operation_buffer_size
 
                 if remainder > 0:
                     await f.seek(read_pos)
