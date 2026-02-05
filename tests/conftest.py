@@ -8,7 +8,7 @@ from testcontainers.core.container import DockerContainer
 def find_available_port(start=8000, end=9000):
     for port in range(start, end):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('localhost', port)) != 0:
+            if s.connect_ex(("localhost", port)) != 0:
                 return port
     raise RuntimeError("No available ports found")
 
@@ -29,7 +29,7 @@ async def nginx_custom():
 
     yield {
         "http": f"http://{container.get_container_host_ip()}:{http_port}",
-        "https": f"https://{container.get_container_host_ip()}:{https_port}"
+        "https": f"https://{container.get_container_host_ip()}:{https_port}",
     }
 
     container.stop()
