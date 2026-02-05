@@ -366,7 +366,8 @@ class ChunkManager:
                 chunk_range,
                 self._chunks_stats[chunk_range].status,
             )
-            return False
+
+        return False
 
     async def delete_finished_chunk(self, chunk_range: ChunkRange) -> None: ...
 
