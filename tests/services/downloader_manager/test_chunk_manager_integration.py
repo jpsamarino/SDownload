@@ -13,7 +13,7 @@ from sDownload.interfaces.protocols.file_info_model import FileInfoModel
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
 from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 from sDownload.services.downloader_manager.chunk_manager import ChunkManager
-from sDownload.services.downloader_manager.download_task import DownloadConfig
+from sDownload.services.downloader_manager.download_config import DownloadConfig
 from sDownload.services.downloader_manager.download_stats_models import EDownloadStatus
 
 

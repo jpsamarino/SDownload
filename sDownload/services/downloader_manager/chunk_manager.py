@@ -11,9 +11,14 @@ from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     EDownloadStatus,
 )
-from sDownload.services.downloader_manager.download_task import DownloadConfig
+from sDownload.services.downloader_manager.download_config import DownloadConfig
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
+)
+from sDownload.utils.range_operations import calculate_optimal_coverage
+from sDownload.interfaces.protocols.file_storage_protocol import (
+    FileStorageProtocol,
+    FileRangeConfig,
 )
 
 
@@ -512,3 +517,50 @@ class ChunkManager:
             completed_batch = await self.wait_for_first_completed_chunk()
             for item in completed_batch:
                 yield item
+
+    async def merge_chunks(self, delete_temp_files: bool = True) -> str:
+        """
+        Calculates the optimal coverage and merges all completed chunks into the final file.
+
+        Args:
+            delete_temp_files: Whether to delete the temporary chunk files after merging.
+
+        Returns:
+            The key of the merged file.
+        """
+        completed_stats = [
+            s
+            for s in self._chunks_stats.values()
+            if s.status == EDownloadStatus.COMPLETED
+        ]
+
+        if not completed_stats:
+            raise RuntimeError("No completed chunks to merge.")
+
+        ranges = [s.range for s in completed_stats]
+        fragments = calculate_optimal_coverage(ranges, file_size=self._cfg.file_size)
+
+        merge_configs = []
+        for frag in fragments:
+            stats = self._chunks_stats[frag.range]
+            merge_configs.append(
+                FileRangeConfig(
+                    key=stats.chunk_file_name,
+                    start_byte=0,
+                    end_byte=(
+                        (frag.read_limit_qt_bytes - 1)
+                        if frag.read_limit_qt_bytes
+                        else None
+                    ),
+                )
+            )
+
+        dest_key = self._cfg.file_name
+        self._logger.info("Merging %d fragments into %s", len(merge_configs), dest_key)
+        await self._storage.merge_ranges(merge_configs, dest_key)
+
+        if delete_temp_files:
+            self._logger.info("Cleaning up temporary chunk files...")
+            await self.cleanup_temp_files()
+
+        return dest_key
