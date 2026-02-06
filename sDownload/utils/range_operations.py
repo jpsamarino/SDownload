@@ -1,6 +1,7 @@
-from typing import List
-
+from collections import deque
+from typing import List, NamedTuple, Optional, Tuple
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
+from sDownload.interfaces.protocols.file_storage_protocol import FileRangeConfig
 
 
 def calculate_ranges(
@@ -66,3 +67,98 @@ def calculate_ranges(
             temp_start = temp_end + 1
 
     return final_ranges
+
+
+class ChunkFragment(NamedTuple):
+    range: ChunkRange
+    read_limit_qt_bytes: Optional[int]
+
+
+def calculate_optimal_coverage(
+    chunks: list[ChunkRange], file_size: Optional[int] = None
+) -> list[ChunkFragment]:
+    """
+    Finds the optimal sequence of chunks to rebuild a file using only "Tail Cuts".
+    This ensures that every file read starts at offset 0 (no seek needed).
+
+    Args:
+        chunks: List of available ChunkRange objects.
+        file_size: Expected total size of the file (optional).
+
+    Returns:
+        A list of ChunkFragment instructions.
+    """
+    if not chunks:
+        raise RuntimeError("No chunks provided for merge resolution.")
+
+    reach = lambda c: c.end if c.end is not None else float("inf")
+
+    best_by_start: dict[int, ChunkRange] = {}
+    for c in chunks:
+        if c.start not in best_by_start or reach(c) > reach(best_by_start[c.start]):
+            best_by_start[c.start] = c
+
+    starts = sorted(best_by_start.keys())
+    if starts[0] > 0:
+        raise RuntimeError(f"Gap at the beginning: first chunk starts at {starts[0]}")
+
+    # Possible exit/cut points (starts of all chunks + file_size)
+    exit_points_set = set(starts)
+    if file_size is not None:
+        exit_points_set.add(file_size)
+    exit_points = sorted(list(exit_points_set))
+
+    # BFS to find the shortest path (least number of chunks) from 0 to target
+    queue: deque[tuple[int, list[ChunkFragment]]] = deque([(0, [])])
+    visited = {0}
+
+    while queue:
+        pos, path = queue.popleft()
+
+        # Check if we reached the goal
+        if file_size is not None and pos == file_size:
+            return path
+
+        chunk = best_by_start.get(pos)
+        if not chunk:
+            continue
+
+        chunk_limit = reach(chunk)
+
+        # Optimization: if this chunk can reach the end, we are done
+        if file_size is None and chunk_limit == float("inf"):
+            # read_limit_qt_bytes=None means read everything available
+            return path + [ChunkFragment(range=chunk, read_limit_qt_bytes=None)]
+
+        # Find all reachable exit points from current chunk starting at 'pos'
+        current_exit_candidates = [
+            ep for ep in exit_points if pos < ep <= chunk_limit + 1
+        ]
+
+        for next_pos in reversed(current_exit_candidates):
+            if next_pos not in visited:
+                visited.add(next_pos)
+
+                # Quantity of bytes to take from this chunk:
+                # If pos=0 and next_pos=100, we need 100 bytes.
+                qt_to_read = next_pos - pos
+
+                # If qt_to_read covers the entire remaining part of this chunk,
+                # we don't need a limit (no truncation).
+                # Note: chunk_limit is the last byte index of the chunk.
+                if chunk_limit == float("inf"):
+                    limit = None
+                elif (pos + qt_to_read) >= chunk_limit + 1:
+                    limit = None
+                else:
+                    limit = qt_to_read
+
+                new_path = path + [
+                    ChunkFragment(range=chunk, read_limit_qt_bytes=limit)
+                ]
+                queue.append((next_pos, new_path))
+
+                if file_size is not None and next_pos == file_size:
+                    return new_path
+
+    raise RuntimeError("Gap detected: unable to cover the required file range.")
