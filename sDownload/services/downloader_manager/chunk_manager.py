@@ -431,7 +431,28 @@ class ChunkManager:
             if s.status in (EDownloadStatus.COMPLETED, EDownloadStatus.DOWNLOADING)
         )
 
+    async def cleanup(self) -> None:
+        """
+        Stops all active processes, deletes temporary files, and clears internal state.
+        """
+        self._logger.info("Performing comprehensive cleanup of ChunkManager")
+
+        # 1. Stop all active chunks and the monitor
+        await self.cancel_all_chunks()
+
+        # 2. Delete temporary files from disk
+        await self.cleanup_temp_files()
+
+        # 3. Clear internal statistics
+        self._chunks_stats.clear()
+        self._logger.info(
+            "Cleanup complete: all tasks stopped, files deleted, and state cleared."
+        )
+
     async def cleanup_temp_files(self) -> None:
+        """
+        Deletes the temporary chunk files from storage.
+        """
         self._logger.info("Cleaning up temp files")
         files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
         files_names_in_storage = {s.key for s in await self._storage.list_data()}
@@ -442,7 +463,8 @@ class ChunkManager:
         delete_tasks = [
             self._storage.delete_data(s) for s in files_to_delete_in_storage
         ]
-        await asyncio.gather(*delete_tasks)
+        if delete_tasks:
+            await asyncio.gather(*delete_tasks)
 
     async def cancel_all_chunks(self) -> None:
         for task in self._chunks_tasks.values():
@@ -560,7 +582,7 @@ class ChunkManager:
         await self._storage.merge_ranges(merge_configs, dest_key)
 
         if delete_temp_files:
-            self._logger.info("Cleaning up temporary chunk files...")
-            await self.cleanup_temp_files()
+            self._logger.info("Cleaning up ChunkManager after merge...")
+            await self.cleanup()
 
         return dest_key
