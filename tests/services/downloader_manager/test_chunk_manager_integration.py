@@ -83,7 +83,7 @@ async def test_chunk_manager_with_nginx(setup_downloader_and_config, storage):
     assert total_downloaded == download_config.file_size
 
     # Cleanup
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -109,7 +109,7 @@ async def test_chunk_manager_cancel_chunks(setup_downloader_and_config, storage)
     )
     assert chunk_manager.get_downloaded_bytes() < download_config.file_size
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(
         chunk_manager.get_chunk_stats(ChunkRange(102390, 511990)).status
         == EDownloadStatus.ERROR
     )
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -156,7 +156,7 @@ async def test_chunk_manager_cleanup_temp_files(setup_downloader_and_config, sto
     listed_keys = [f.key for f in listed_files]
     assert any(f in listed_keys for f in temp_files)
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
     listed_files_after = await storage.list_data()
     listed_keys_after = [f.key for f in listed_files_after]
@@ -193,7 +193,7 @@ async def test_chunk_manager_stats_tracking(setup_downloader_and_config, storage
     total_downloaded = chunk_manager.get_downloaded_bytes()
     assert total_downloaded == download_config.file_size
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -218,7 +218,7 @@ async def test_chunk_manager_cancel_all_chunks(setup_downloader_and_config, stor
     for key, stat in all_stats.items():
         assert stat.status in [EDownloadStatus.CANCELLED]
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -258,7 +258,7 @@ async def test_resize_chunk_success_with_finished_chunks(
     assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 25600
     assert chunk_manager.get_downloaded_bytes() == 25600
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -293,7 +293,7 @@ async def test_resize_chunk_success_with_downloading_chunks(
     assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 25600
     assert chunk_manager.get_downloaded_bytes() == 25600
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -322,7 +322,7 @@ async def test_resize_chunk_prefix_range(setup_downloader_and_config, storage):
     assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 10001
     assert chunk_manager.get_downloaded_bytes() == 10001
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -353,7 +353,7 @@ async def test_resize_chunk_head_cut(setup_downloader_and_config, storage):
         chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 51123 - 10240 + 1
     )
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -382,7 +382,7 @@ async def test_resize_chunk_cancel_successor(setup_downloader_and_config, storag
         == EDownloadStatus.CANCELLED
     )
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
@@ -475,4 +475,119 @@ async def test_chunk_manager_remove_chunk_integration(
     # Verify total downloaded bytes is 0 because all chunks were removed
     assert chunk_manager.get_downloaded_bytes() == 0
 
-    await chunk_manager.cleanup_temp_files()
+    await chunk_manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_merge_basic(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    chunk_manager = ChunkManager(download_config, downloader, storage)
+
+    # 1. Download in two contiguous parts
+    r1 = ChunkRange(0, 51199)
+    r2 = ChunkRange(51200, None)
+
+    chunk_manager.start_chunk(r1)
+    chunk_manager.start_chunk(r2)
+
+    await chunk_manager.wait_for_completed_chunks()
+
+    # 2. Merge
+    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+
+    # 3. Verify
+    assert dest_file == download_config.file_name
+    listed = await storage.list_data()
+    listed_keys = [f.key for f in listed]
+    assert dest_file in listed_keys
+
+    # Check size
+    file_info = next(f for f in listed if f.key == dest_file)
+    assert file_info.size_bytes == 102400
+
+    await chunk_manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_merge_with_overlaps(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    chunk_manager = ChunkManager(download_config, downloader, storage)
+
+    # 1. Start overlapping chunks
+    # Part A: 0-50000
+    # Part B: 25000-75000
+    # Part C: 50000-None (102399)
+    r1 = ChunkRange(0, 50000)
+    r2 = ChunkRange(25000, 75000)
+    r3 = ChunkRange(50000, None)
+
+    chunk_manager.start_chunk(r1)
+    chunk_manager.start_chunk(r2)
+    chunk_manager.start_chunk(r3)
+
+    await chunk_manager.wait_for_completed_chunks()
+
+    # 2. Merge - should use optimal coverage
+    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+
+    # 3. Verify
+    assert dest_file == download_config.file_name
+    listed = await storage.list_data()
+    listed_keys = [f.key for f in listed]
+    assert dest_file in listed_keys
+
+    file_info = next(f for f in listed if f.key == dest_file)
+    assert file_info.size_bytes == 102400
+
+    await chunk_manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_merge_after_resize(setup_downloader_and_config, storage):
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    chunk_manager = ChunkManager(download_config, downloader, storage)
+
+    # 1. Start a part and resize it mid-way (or after completion)
+    r1_orig = ChunkRange(0, 50000)
+    chunk_manager.start_chunk(r1_orig)
+
+    # Wait for completion of original
+    await chunk_manager.wait_for_completed_chunks()
+
+    # Resize to something smaller
+    r1_new = ChunkRange(0, 25000)
+    chunk_manager.resize_chunk(r1_orig, r1_new)
+
+    # Wait for resize (succession) to complete
+    await chunk_manager.wait_for_completed_chunks()
+
+    # 2. Start the rest of the file
+    r2 = ChunkRange(25001, None)
+    chunk_manager.start_chunk(r2)
+    await chunk_manager.wait_for_completed_chunks()
+
+    # 3. Merge
+    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+
+    # 4. Verify
+    assert dest_file == download_config.file_name
+    listed = await storage.list_data()
+    file_info = next(f for f in listed if f.key == dest_file)
+    assert file_info.size_bytes == 102400
+
+    await chunk_manager.cleanup()

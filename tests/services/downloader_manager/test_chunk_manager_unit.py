@@ -579,3 +579,40 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
     assert s1.chunk_file_name not in storage_keys
     assert s2.chunk_file_name not in storage_keys
     assert s3.chunk_file_name not in storage_keys
+
+
+@pytest.mark.asyncio
+async def test_cleanup_comprehensive(chunk_manager, temp_storage):
+    range_ = ChunkRange(0, 100)
+
+    async def slow_download(chunk_range):
+        chunk_manager._chunks_tasks[chunk_range].init_signal.set()
+        await asyncio.sleep(5.0)
+        return chunk_range
+
+    chunk_manager._download_chunk = slow_download
+
+    # 1. Start a chunk (creates stats)
+    chunk_manager.start_chunk(range_)
+    stats = chunk_manager.get_chunk_stats(range_)
+
+    # Manually create the file so cleanup_temp_files finds it
+    await temp_storage.save_binary_data(stats.chunk_file_name, iter_helper(b"test"))
+
+    # Mock delete_data AFTER creating the file to track the call
+    temp_storage.delete_data = AsyncMock()
+
+    await asyncio.sleep(0.01)  # task starts, monitor starts
+
+    assert range_ in chunk_manager._chunks_tasks
+    assert range_ in chunk_manager._chunks_stats
+    assert chunk_manager._monitor_task is not None
+
+    # 2. Perform cleanup
+    await chunk_manager.cleanup()
+
+    # Assertions
+    assert len(chunk_manager._chunks_tasks) == 0
+    assert len(chunk_manager._chunks_stats) == 0
+    assert chunk_manager._monitor_task is None
+    temp_storage.delete_data.assert_called_with(stats.chunk_file_name)
