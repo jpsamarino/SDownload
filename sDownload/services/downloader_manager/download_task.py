@@ -15,19 +15,8 @@ from sDownload.services.downloader_manager.throttle_and_track_async_stream impor
     throttle_and_track_async_stream,
 )
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
-
-
-@dataclass
-class DownloadConfig:
-    file_name: str
-    file_dir: Optional[str]
-    file_size: int | None
-    file_id: Optional[str]
-    download_url: str
-    file_created_at: datetime
-    protocol_data: Optional[dict]
-    max_connections_per_download: int = 1
-    max_speed_bytes_per_second: float = float("inf")  # bytes/s
+from sDownload.services.downloader_manager.chunk_manager import ChunkManager
+from sDownload.services.downloader_manager.download_config import DownloadConfig
 
 
 class DownloadTask:
@@ -243,35 +232,44 @@ class DownloadTask:
             self._chunks_tasks[self._key(start, end)] = task
             self._logger.info("Chunk %s-%s started", start, end or "EOF")
 
-    async def _delete_all_temp_files(self):
-        self._logger.info("_delete_all_temp_files")
-        files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
-        files_names_in_storage = [s.key for s in await self._storage.list_data()]
-        files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_names_in_storage
-        ]
-        self._logger.info(files_to_delete_in_storage)
-        delete_tasks = [
-            self._storage.delete_data(s) for s in files_to_delete_in_storage
-        ]
-        self._logger.info(files_to_delete)
-        await asyncio.gather(*delete_tasks)
-
     async def _join_all_files(self, delete_temp_files: bool = True):
-        file_names = [s.chunk_file_name for s in self._chunks_stats.values()]
-        await self._storage.merge_binary_files(file_names, self._cfg.file_name)
-        if delete_temp_files:
-            await self._delete_all_temp_files()
+        """
+        Delegates the final file assembly to ChunkManager.
+        """
+        manager = ChunkManager(
+            cfg=self._cfg,
+            downloader=self._downloader,
+            storage=self._storage,
+            logger=self._logger,
+        )
+
+        # Inject our internal stats into the manager
+        # ChunkManager expects a dict[ChunkRange, ChunkDownloadStats]
+        # Our self._chunks_stats is a dict[str, ChunkDownloadStats]
+        for stats in self._chunks_stats.values():
+            manager._chunks_stats[stats.range] = stats
+
+        await manager.merge_chunks(delete_temp_files=delete_temp_files)
 
     async def _delete_all_tasks(self):
-        for key_n, task in self._chunks_tasks.items():
+        manager = ChunkManager(
+            cfg=self._cfg,
+            downloader=self._downloader,
+            storage=self._storage,
+            logger=self._logger,
+        )
+        # Inject our internal stats into the manager for cleanup
+        for stats in self._chunks_stats.values():
+            manager._chunks_stats[stats.range] = stats
+
+        # Stop local tasks
+        for task in self._chunks_tasks.values():
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                self._logger.info("Chunk task %s cancelled.", key_n)
+
+        # Perform comprehensive cleanup
+        await manager.cleanup()
+
         self._chunks_tasks.clear()
-        await self._delete_all_temp_files()
         self._chunks_stats.clear()
 
     def _start_download(self, connections: int = 1):

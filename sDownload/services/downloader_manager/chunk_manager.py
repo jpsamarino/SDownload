@@ -540,12 +540,12 @@ class ChunkManager:
             for item in completed_batch:
                 yield item
 
-    async def merge_chunks(self, delete_temp_files: bool = True) -> str:
+    async def merge_chunks(self, cleanup: bool = True) -> str:
         """
         Calculates the optimal coverage and merges all completed chunks into the final file.
 
         Args:
-            delete_temp_files: Whether to delete the temporary chunk files after merging.
+            cleanup: Whether to delete the temporary chunk files after merging.
 
         Returns:
             The key of the merged file.
@@ -581,7 +581,7 @@ class ChunkManager:
         self._logger.info("Merging %d fragments into %s", len(merge_configs), dest_key)
         await self._storage.merge_ranges(merge_configs, dest_key)
 
-        if delete_temp_files:
+        if cleanup:
             self._logger.info("Cleaning up ChunkManager after merge...")
             await self.cleanup()
 

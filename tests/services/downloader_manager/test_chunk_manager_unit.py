@@ -559,7 +559,7 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
     s2.set_status(EDownloadStatus.COMPLETED)
     s3.set_status(EDownloadStatus.COMPLETED)
 
-    dest_key = await chunk_manager.merge_chunks(delete_temp_files=True)
+    dest_key = await chunk_manager.merge_chunks(cleanup=True)
 
     assert dest_key == chunk_manager._cfg.file_name
 

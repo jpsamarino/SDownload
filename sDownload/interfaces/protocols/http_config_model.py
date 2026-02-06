@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from .proxy_model import ProxyConfigModel
+from .proxy_models import ProxyConfigModel
 
 
 @dataclass
