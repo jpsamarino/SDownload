@@ -374,7 +374,7 @@ class ChunkManager:
 
         return False
 
-    async def remove_chunk(self, chunk_range: ChunkRange) -> None:
+    async def delete_chunk_data(self, chunk_range: ChunkRange) -> None:
         if chunk_range in self._chunks_tasks:
             self._logger.info(
                 "Cancelling active task for chunk %s before removal.", chunk_range

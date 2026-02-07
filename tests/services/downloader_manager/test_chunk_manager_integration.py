@@ -450,7 +450,7 @@ async def test_chunk_manager_remove_chunk_integration(
     file_2 = stats_2.chunk_file_name
 
     # 1. Remove range_1 while downloading
-    await chunk_manager.remove_chunk(range_1)
+    await chunk_manager.delete_chunk_data(range_1)
 
     assert range_1 not in chunk_manager.get_active_chunks()
     assert chunk_manager.get_chunk_stats(range_1) is None
@@ -465,7 +465,7 @@ async def test_chunk_manager_remove_chunk_integration(
     assert chunk_manager.get_chunk_stats(range_2).status == EDownloadStatus.COMPLETED
 
     # 3. Remove completed range_2
-    await chunk_manager.remove_chunk(range_2)
+    await chunk_manager.delete_chunk_data(range_2)
     assert chunk_manager.get_chunk_stats(range_2) is None
 
     listed_files_after = await storage.list_data()
@@ -498,7 +498,7 @@ async def test_chunk_manager_merge_basic(setup_downloader_and_config, storage):
     await chunk_manager.wait_for_completed_chunks()
 
     # 2. Merge
-    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+    dest_file = await chunk_manager.merge_chunks(cleanup=True)
 
     # 3. Verify
     assert dest_file == download_config.file_name
@@ -538,7 +538,7 @@ async def test_chunk_manager_merge_with_overlaps(setup_downloader_and_config, st
     await chunk_manager.wait_for_completed_chunks()
 
     # 2. Merge - should use optimal coverage
-    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+    dest_file = await chunk_manager.merge_chunks(cleanup=True)
 
     # 3. Verify
     assert dest_file == download_config.file_name
@@ -582,7 +582,7 @@ async def test_chunk_manager_merge_after_resize(setup_downloader_and_config, sto
     await chunk_manager.wait_for_completed_chunks()
 
     # 3. Merge
-    dest_file = await chunk_manager.merge_chunks(delete_temp_files=True)
+    dest_file = await chunk_manager.merge_chunks(cleanup=True)
 
     # 4. Verify
     assert dest_file == download_config.file_name

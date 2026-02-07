@@ -489,7 +489,7 @@ async def test_remove_chunk_active_cancels_and_cleans(chunk_manager, temp_storag
     task_context = chunk_manager._chunks_tasks[range_]
     assert not task_context.task.done()
 
-    await chunk_manager.remove_chunk(range_)
+    await chunk_manager.delete_chunk_data(range_)
 
     assert range_ not in chunk_manager._chunks_tasks
     assert range_ not in chunk_manager._chunks_stats
@@ -511,7 +511,7 @@ async def test_remove_chunk_completed_cleans_up(chunk_manager, temp_storage):
         status=EDownloadStatus.COMPLETED,
     )
 
-    await manager.remove_chunk(range_)
+    await manager.delete_chunk_data(range_)
 
     assert range_ not in manager._chunks_stats
     temp_storage.delete_data.assert_called_once_with("test_chunk.sdownload")
@@ -523,7 +523,7 @@ async def test_remove_chunk_non_existent_is_safe(chunk_manager, caplog):
     range_ = ChunkRange(999, 9999)
 
     with caplog.at_level(logging.WARNING):
-        await manager.remove_chunk(range_)
+        await manager.delete_chunk_data(range_)
 
     # Should not raise, just log warning
     assert "No stats found for chunk" in caplog.text
