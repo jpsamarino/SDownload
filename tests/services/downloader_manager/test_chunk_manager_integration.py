@@ -104,7 +104,7 @@ async def test_chunk_manager_cancel_chunks(setup_downloader_and_config, storage)
 
     assert is_cancelled is True
     assert (
-        chunk_manager.get_chunk_stats(ChunkRange(0, 51200)).status
+        chunk_manager.stats.get(ChunkRange(0, 51200)).status
         == EDownloadStatus.CANCELLED
     )
     assert chunk_manager.get_downloaded_bytes() < download_config.file_size
@@ -129,7 +129,7 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(
     await chunk_manager.wait_for_completed_chunks(0.5)
 
     assert (
-        chunk_manager.get_chunk_stats(ChunkRange(102390, 511990)).status
+        chunk_manager.stats.get(ChunkRange(102390, 511990)).status
         == EDownloadStatus.ERROR
     )
     await chunk_manager.cleanup()
@@ -149,9 +149,7 @@ async def test_chunk_manager_cleanup_temp_files(setup_downloader_and_config, sto
 
     await chunk_manager.wait_for_completed_chunks(1.0)
 
-    temp_files = [
-        stats.chunk_file_name for stats in chunk_manager.get_all_chunk_stats().values()
-    ]
+    temp_files = [stats.chunk_file_name for stats in chunk_manager.stats.values()]
     listed_files = await storage.list_data()
     listed_keys = [f.key for f in listed_files]
     assert any(f in listed_keys for f in temp_files)
@@ -176,15 +174,20 @@ async def test_chunk_manager_stats_tracking(setup_downloader_and_config, storage
     chunk_manager.start_chunk(ChunkRange(51171, 102399))
 
     await asyncio.sleep(0.1)
-    active = chunk_manager.get_active_chunks()
+    # At least some part of the download should be happening or ready to happen
+    active = [
+        s
+        for s in chunk_manager.stats.values()
+        if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
+    ]
     assert len(active) > 0
-    stats = chunk_manager.get_chunk_stats(ChunkRange(0, 51170))
+    stats = chunk_manager.stats.get(ChunkRange(0, 51170))
     assert stats is not None
     assert stats.status == EDownloadStatus.DOWNLOADING
 
     await chunk_manager.wait_for_completed_chunks(1.0)
 
-    all_stats = chunk_manager.get_all_chunk_stats()
+    all_stats = chunk_manager.stats
     assert len(all_stats) == 2
     for key, stat in all_stats.items():
         assert stat.status == EDownloadStatus.COMPLETED
@@ -212,9 +215,15 @@ async def test_chunk_manager_cancel_all_chunks(setup_downloader_and_config, stor
     await asyncio.sleep(0.5)
     await chunk_manager.cancel_all_chunks()
 
-    assert len(chunk_manager.get_active_chunks()) == 0
+    # No chunks should be in an active state
+    active = [
+        s
+        for s in chunk_manager.stats.values()
+        if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
+    ]
+    assert len(active) == 0
 
-    all_stats = chunk_manager.get_all_chunk_stats()
+    all_stats = chunk_manager.stats
     for key, stat in all_stats.items():
         assert stat.status in [EDownloadStatus.CANCELLED]
 
@@ -243,19 +252,15 @@ async def test_resize_chunk_success_with_finished_chunks(
     chunk_manager.resize_chunk(original_range, new_range)
 
     assert (
-        chunk_manager.get_chunk_stats(new_range).status
-        == EDownloadStatus.AWAITING_SUCCESSION
+        chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
     )
 
     await chunk_manager.wait_for_completed_chunks(0.1)
 
-    assert chunk_manager.get_chunk_stats(new_range).status == EDownloadStatus.COMPLETED
-    assert (
-        chunk_manager.get_chunk_stats(original_range).status
-        == EDownloadStatus.DEPRECATED
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.COMPLETED
+    assert chunk_manager.stats.get(original_range).status == EDownloadStatus.DEPRECATED
 
-    assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 25600
+    assert chunk_manager.stats.get(new_range).bytes_downloaded == 25600
     assert chunk_manager.get_downloaded_bytes() == 25600
 
     await chunk_manager.cleanup()
@@ -278,19 +283,15 @@ async def test_resize_chunk_success_with_downloading_chunks(
     chunk_manager.resize_chunk(original_range, new_range)
 
     assert (
-        chunk_manager.get_chunk_stats(new_range).status
-        == EDownloadStatus.AWAITING_SUCCESSION
+        chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
     )
 
     await chunk_manager.wait_for_completed_chunks(1)
 
-    assert chunk_manager.get_chunk_stats(new_range).status == EDownloadStatus.COMPLETED
-    assert (
-        chunk_manager.get_chunk_stats(original_range).status
-        == EDownloadStatus.DEPRECATED
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.COMPLETED
+    assert chunk_manager.stats.get(original_range).status == EDownloadStatus.DEPRECATED
 
-    assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 25600
+    assert chunk_manager.stats.get(new_range).bytes_downloaded == 25600
     assert chunk_manager.get_downloaded_bytes() == 25600
 
     await chunk_manager.cleanup()
@@ -313,13 +314,10 @@ async def test_resize_chunk_prefix_range(setup_downloader_and_config, storage):
 
     await chunk_manager.wait_for_completed_chunks(1)
 
-    assert chunk_manager.get_chunk_stats(new_range).status == EDownloadStatus.COMPLETED
-    assert (
-        chunk_manager.get_chunk_stats(original_range).status
-        == EDownloadStatus.DEPRECATED
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.COMPLETED
+    assert chunk_manager.stats.get(original_range).status == EDownloadStatus.DEPRECATED
 
-    assert chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 10001
+    assert chunk_manager.stats.get(new_range).bytes_downloaded == 10001
     assert chunk_manager.get_downloaded_bytes() == 10001
 
     await chunk_manager.cleanup()
@@ -344,14 +342,9 @@ async def test_resize_chunk_head_cut(setup_downloader_and_config, storage):
 
     await chunk_manager.wait_for_completed_chunks(1.0)
 
-    assert chunk_manager.get_chunk_stats(new_range).status == EDownloadStatus.COMPLETED
-    assert (
-        chunk_manager.get_chunk_stats(original_range).status
-        == EDownloadStatus.DEPRECATED
-    )
-    assert (
-        chunk_manager.get_chunk_stats(new_range).bytes_downloaded == 51123 - 10240 + 1
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.COMPLETED
+    assert chunk_manager.stats.get(original_range).status == EDownloadStatus.DEPRECATED
+    assert chunk_manager.stats.get(new_range).bytes_downloaded == 51123 - 10240 + 1
 
     await chunk_manager.cleanup()
 
@@ -376,11 +369,8 @@ async def test_resize_chunk_cancel_successor(setup_downloader_and_config, storag
 
     await asyncio.sleep(1)
 
-    assert chunk_manager.get_chunk_stats(new_range).status == EDownloadStatus.CANCELLED
-    assert (
-        chunk_manager.get_chunk_stats(original_range).status
-        == EDownloadStatus.CANCELLED
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.CANCELLED
+    assert chunk_manager.stats.get(original_range).status == EDownloadStatus.CANCELLED
 
     await chunk_manager.cleanup()
 
@@ -444,16 +434,16 @@ async def test_chunk_manager_remove_chunk_integration(
     # Wait for some data to be downloaded
     await asyncio.sleep(0.1)
 
-    stats_1 = chunk_manager.get_chunk_stats(range_1)
-    stats_2 = chunk_manager.get_chunk_stats(range_2)
+    stats_1 = chunk_manager.stats.get(range_1)
+    stats_2 = chunk_manager.stats.get(range_2)
     file_1 = stats_1.chunk_file_name
     file_2 = stats_2.chunk_file_name
 
     # 1. Remove range_1 while downloading
     await chunk_manager.delete_chunk_data(range_1)
 
-    assert range_1 not in chunk_manager.get_active_chunks()
-    assert chunk_manager.get_chunk_stats(range_1) is None
+    assert range_1 not in chunk_manager.stats
+    assert chunk_manager.stats.get(range_1) is None
 
     # Check file is deleted
     listed_files = await storage.list_data()
@@ -462,11 +452,11 @@ async def test_chunk_manager_remove_chunk_integration(
 
     # 2. Wait for range_2 to complete
     await chunk_manager.wait_for_completed_chunks()
-    assert chunk_manager.get_chunk_stats(range_2).status == EDownloadStatus.COMPLETED
+    assert chunk_manager.stats.get(range_2).status == EDownloadStatus.COMPLETED
 
     # 3. Remove completed range_2
     await chunk_manager.delete_chunk_data(range_2)
-    assert chunk_manager.get_chunk_stats(range_2) is None
+    assert chunk_manager.stats.get(range_2) is None
 
     listed_files_after = await storage.list_data()
     listed_keys_after = [f.key for f in listed_files_after]

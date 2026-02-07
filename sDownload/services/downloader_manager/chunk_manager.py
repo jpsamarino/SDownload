@@ -401,13 +401,11 @@ class ChunkManager:
         else:
             self._logger.warning("No stats found for chunk %s to remove.", chunk_range)
 
-    def get_active_chunks(self) -> list[ChunkRange]:
-        return list(self._chunks_tasks.keys())
-
-    def get_chunk_stats(self, chunk_range: ChunkRange) -> None | ChunkDownloadStats:
-        return self._chunks_stats.get(chunk_range)
-
-    def get_all_chunk_stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
+    @property
+    def stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
+        """
+        Returns a read-only view of all chunk stats.
+        """
         return MappingProxyType(self._chunks_stats)
 
     def set_speed_limit(
@@ -464,8 +462,14 @@ class ChunkManager:
             await asyncio.gather(*delete_tasks)
 
     async def cancel_all_chunks(self) -> None:
-        for task in self._chunks_tasks.values():
+        for chunk_range, task in self._chunks_tasks.items():
             task.task.cancel()
+            # if task is not initialized, set status to cancelled, dont need wait start_signal
+            if self._chunks_stats[chunk_range].status in (
+                EDownloadStatus.PENDING,
+                EDownloadStatus.AWAITING_SUCCESSION,
+            ):
+                self._chunks_stats[chunk_range].status = EDownloadStatus.CANCELLED
 
         if self._chunks_tasks:
             all_tasks = [context.task for context in self._chunks_tasks.values()]

@@ -99,7 +99,11 @@ async def test_cancel_all_chunks_cleans_up(chunk_manager):
 
     await manager.cancel_all_chunks()
 
-    assert len(manager.get_active_chunks()) == 0
+    # All chunks should be stopped (Cancelled or Completed)
+    assert all(
+        s.status in (EDownloadStatus.CANCELLED, EDownloadStatus.COMPLETED)
+        for s in manager.stats.values()
+    )
     await asyncio.sleep(1.1)
     if manager._monitor_task:
         assert manager._monitor_task.done()
@@ -209,8 +213,8 @@ async def test_set_speed_limit_global(chunk_manager):
     new_speed = 5000.0
     chunk_manager.set_speed_limit(new_speed)
 
-    stats1 = chunk_manager.get_chunk_stats(r1)
-    stats2 = chunk_manager.get_chunk_stats(r2)
+    stats1 = chunk_manager.stats.get(r1)
+    stats2 = chunk_manager.stats.get(r2)
 
     assert stats1.target_speed_bps == new_speed
     assert stats2.target_speed_bps == new_speed
@@ -229,8 +233,8 @@ async def test_set_speed_limit_specific_chunk(chunk_manager):
     new_speed = 2000.0
     chunk_manager.set_speed_limit(new_speed, chunk_range=r1)
 
-    stats1 = chunk_manager.get_chunk_stats(r1)
-    stats2 = chunk_manager.get_chunk_stats(r2)
+    stats1 = chunk_manager.stats.get(r1)
+    stats2 = chunk_manager.stats.get(r2)
 
     assert stats1.target_speed_bps == new_speed
     assert stats2.target_speed_bps != new_speed  # Should remain unchanged
@@ -295,7 +299,7 @@ async def test_resize_same_range_noop(chunk_manager):
     # Resize to self
     chunk_manager.resize_chunk(range_, range_)
 
-    stats = chunk_manager.get_chunk_stats(range_)
+    stats = chunk_manager.stats.get(range_)
     assert stats.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.COMPLETED)
     await chunk_manager.cancel_all_chunks()
 
@@ -358,11 +362,21 @@ async def test_chunk_manager_get_active(chunk_manager):
     r1 = ChunkRange(0, 10)
     manager.start_chunk(r1)
 
-    active = manager.get_active_chunks()
+    # Filter to get only active (downloading/pending) chunks
+    active = [
+        r
+        for r, s in manager.stats.items()
+        if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
+    ]
     assert active == [r1]
 
     await manager.cancel_all_chunks()
-    assert manager.get_active_chunks() == []
+    active_after = [
+        r
+        for r, s in manager.stats.items()
+        if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
+    ]
+    assert active_after == []
 
 
 @pytest.mark.asyncio
@@ -594,7 +608,7 @@ async def test_cleanup_comprehensive(chunk_manager, temp_storage):
 
     # 1. Start a chunk (creates stats)
     chunk_manager.start_chunk(range_)
-    stats = chunk_manager.get_chunk_stats(range_)
+    stats = chunk_manager.stats.get(range_)
 
     # Manually create the file so cleanup_temp_files finds it
     await temp_storage.save_binary_data(stats.chunk_file_name, iter_helper(b"test"))
