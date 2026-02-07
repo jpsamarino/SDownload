@@ -465,11 +465,12 @@ class ChunkManager:
         for chunk_range, task in self._chunks_tasks.items():
             task.task.cancel()
             # if task is not initialized, set status to cancelled, dont need wait start_signal
-            if self._chunks_stats[chunk_range].status in (
+            stat = self._chunks_stats.get(chunk_range)
+            if stat and stat.status in (
                 EDownloadStatus.PENDING,
                 EDownloadStatus.AWAITING_SUCCESSION,
             ):
-                self._chunks_stats[chunk_range].status = EDownloadStatus.CANCELLED
+                stat.status = EDownloadStatus.CANCELLED
 
         if self._chunks_tasks:
             all_tasks = [context.task for context in self._chunks_tasks.values()]
