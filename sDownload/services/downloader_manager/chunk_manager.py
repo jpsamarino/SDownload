@@ -441,7 +441,7 @@ class ChunkManager:
         await self.cancel_all_chunks()
 
         # 2. Delete temporary files from disk
-        await self.cleanup_temp_files()
+        await self._cleanup_temp_files()
 
         # 3. Clear internal statistics
         self._chunks_stats.clear()
@@ -449,10 +449,7 @@ class ChunkManager:
             "Cleanup complete: all tasks stopped, files deleted, and state cleared."
         )
 
-    async def cleanup_temp_files(self) -> None:
-        """
-        Deletes the temporary chunk files from storage.
-        """
+    async def _cleanup_temp_files(self) -> None:
         self._logger.info("Cleaning up temp files")
         files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
         files_names_in_storage = {s.key for s in await self._storage.list_data()}
