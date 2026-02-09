@@ -44,6 +44,95 @@ class ChunkManager:
         self._wait_lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
 
+    @property
+    def stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
+        """
+        Returns a read-only view of all chunk stats.
+        """
+        return MappingProxyType(self._chunks_stats)
+
+    async def _run_succession(
+        self, range_predecessor: ChunkRange, range_successor: ChunkRange
+    ) -> ChunkRange:
+
+        stats_predecessor = self._chunks_stats[range_predecessor]
+        stats_successor = self._chunks_stats[range_successor]
+        ctx_predecessor = self._chunks_tasks.get(range_predecessor)
+        ctx_successor = self._chunks_tasks[range_successor]
+
+        ctx_successor.init_signal.set()
+
+        predecessor_error: Exception | None = None
+
+        try:
+            if ctx_predecessor:
+                # need use asyncio.wait to indentify self.cancelled() (_run_succession)
+                await asyncio.wait(
+                    [ctx_predecessor.task], return_when=asyncio.FIRST_COMPLETED
+                )
+                try:
+                    await ctx_predecessor.task
+                except asyncio.CancelledError:
+                    self._logger.info(
+                        "Predecessor task %s cancelled.", range_predecessor
+                    )
+                except Exception as e:
+                    self._logger.warning(
+                        "Predecessor task %s failed: %s", range_predecessor, e
+                    )
+                    predecessor_error = e
+
+            limit = stats_predecessor.limit_qt_bytes
+
+            if predecessor_error:
+                stats_successor.set_status(EDownloadStatus.ERROR)
+                raise RuntimeError(
+                    f"Predecessor failed: {predecessor_error}"
+                ) from predecessor_error
+
+            if limit and stats_predecessor.bytes_downloaded < limit:
+                stats_successor.set_status(EDownloadStatus.ERROR)
+                raise RuntimeError(
+                    f"Insufficient data: {stats_predecessor.bytes_downloaded}/{limit} bytes"
+                )
+
+            start_crop = range_successor.start - range_predecessor.start
+            end_crop = (
+                (range_successor.end - range_predecessor.start)
+                if range_successor.end is not None
+                else stats_predecessor.bytes_downloaded - 1
+            )
+
+            await self._storage.crop_file(
+                stats_predecessor.chunk_file_name, start_crop, end_crop
+            )
+            await self._storage.move_data(
+                stats_predecessor.chunk_file_name, stats_successor.chunk_file_name
+            )
+
+            stats_successor.set_status(EDownloadStatus.COMPLETED)
+            stats_predecessor.set_status(EDownloadStatus.DEPRECATED)
+            stats_successor.bytes_downloaded = end_crop - start_crop + 1
+            self._logger.info(
+                "Succession complete: %s is now COMPLETED.", range_successor
+            )
+
+            return range_successor
+
+        except asyncio.CancelledError:
+            self._logger.info("_run_succession cancelled in task %s.", range_successor)
+            stats_successor.set_status(EDownloadStatus.CANCELLED)
+            if ctx_predecessor and not ctx_predecessor.task.done():
+                ctx_predecessor.task.cancel()
+                await ctx_predecessor.task
+            stats_predecessor.remove_limit_observer()
+            raise
+
+        except Exception:
+            if stats_successor.status != EDownloadStatus.ERROR:
+                stats_successor.set_status(EDownloadStatus.ERROR)
+            raise
+
     def _register_chunk_stats(
         self,
         chunk_range: ChunkRange,
@@ -172,6 +261,63 @@ class ChunkManager:
         ):
             self._monitor_task.cancel()
 
+    async def _wait_for_chunks(
+        self,
+        timeout: float | None,
+        return_when: Literal[
+            asyncio.FIRST_COMPLETED,
+            asyncio.ALL_COMPLETED,
+        ],
+    ) -> list[ChunkDownloadStats]:
+        async with self._wait_lock:
+            if not self._chunks_tasks:
+                return []
+
+            all_tasks = [context.task for context in self._chunks_tasks.values()]
+            done, _ = await asyncio.wait(
+                all_tasks,
+                timeout=timeout,
+                return_when=return_when,
+            )
+
+            completed: list[ChunkDownloadStats] = []
+
+            for chunk_range, task_context in self._chunks_tasks.items():
+                if task_context.task in done:
+                    completed.append(self._chunks_stats[chunk_range])
+                    try:
+                        _ = task_context.task.result()
+                    except asyncio.CancelledError:
+                        self._logger.info("Chunk %s cancelled by asyncio", chunk_range)
+                    except Exception as e:
+                        self._logger.warning(
+                            "%s: Chunk %s failed: %s",
+                            self._cfg.file_name,
+                            chunk_range,
+                            e,
+                            exc_info=False,
+                        )
+
+            for stats in completed:
+                self._chunks_tasks.pop(stats.range, None)
+
+            self._check_stop_monitor()
+            return completed
+
+    async def _cleanup_temp_files(self) -> None:
+        self._logger.info("Cleaning up temp files")
+        files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
+        files_names_in_storage = {s.key for s in await self._storage.list_data()}
+        files_to_delete_in_storage = [
+            s for s in files_to_delete if s in files_names_in_storage
+        ]
+        self._logger.info("Files to delete: %s", files_to_delete_in_storage)
+        delete_tasks = [
+            self._storage.delete_data(s) for s in files_to_delete_in_storage
+        ]
+        if delete_tasks:
+            await asyncio.gather(*delete_tasks)
+
     def start_chunk(
         self, chunk_range: ChunkRange, target_speed_bps: float | None = None
     ) -> None:
@@ -262,88 +408,6 @@ class ChunkManager:
             init_signal=asyncio.Event(),
         )
 
-    async def _run_succession(
-        self, range_predecessor: ChunkRange, range_successor: ChunkRange
-    ) -> ChunkRange:
-
-        stats_predecessor = self._chunks_stats[range_predecessor]
-        stats_successor = self._chunks_stats[range_successor]
-        ctx_predecessor = self._chunks_tasks.get(range_predecessor)
-        ctx_successor = self._chunks_tasks[range_successor]
-
-        ctx_successor.init_signal.set()
-
-        predecessor_error: Exception | None = None
-
-        try:
-            if ctx_predecessor:
-                # need use asyncio.wait to indentify self.cancelled() (_run_succession)
-                await asyncio.wait(
-                    [ctx_predecessor.task], return_when=asyncio.FIRST_COMPLETED
-                )
-                try:
-                    await ctx_predecessor.task
-                except asyncio.CancelledError:
-                    self._logger.info(
-                        "Predecessor task %s cancelled.", range_predecessor
-                    )
-                except Exception as e:
-                    self._logger.warning(
-                        "Predecessor task %s failed: %s", range_predecessor, e
-                    )
-                    predecessor_error = e
-
-            limit = stats_predecessor.limit_qt_bytes
-
-            if predecessor_error:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-                raise RuntimeError(
-                    f"Predecessor failed: {predecessor_error}"
-                ) from predecessor_error
-
-            if limit and stats_predecessor.bytes_downloaded < limit:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-                raise RuntimeError(
-                    f"Insufficient data: {stats_predecessor.bytes_downloaded}/{limit} bytes"
-                )
-
-            start_crop = range_successor.start - range_predecessor.start
-            end_crop = (
-                (range_successor.end - range_predecessor.start)
-                if range_successor.end is not None
-                else stats_predecessor.bytes_downloaded - 1
-            )
-
-            await self._storage.crop_file(
-                stats_predecessor.chunk_file_name, start_crop, end_crop
-            )
-            await self._storage.move_data(
-                stats_predecessor.chunk_file_name, stats_successor.chunk_file_name
-            )
-
-            stats_successor.set_status(EDownloadStatus.COMPLETED)
-            stats_predecessor.set_status(EDownloadStatus.DEPRECATED)
-            stats_successor.bytes_downloaded = end_crop - start_crop + 1
-            self._logger.info(
-                "Succession complete: %s is now COMPLETED.", range_successor
-            )
-
-            return range_successor
-
-        except asyncio.CancelledError:
-            self._logger.info("_run_succession cancelled in task %s.", range_successor)
-            stats_successor.set_status(EDownloadStatus.CANCELLED)
-            if ctx_predecessor and not ctx_predecessor.task.done():
-                ctx_predecessor.task.cancel()
-                await ctx_predecessor.task
-            stats_predecessor.remove_limit_observer()
-            raise
-
-        except Exception:
-            if stats_successor.status != EDownloadStatus.ERROR:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-            raise
-
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 
         if chunk_range in self._chunks_tasks:
@@ -401,13 +465,6 @@ class ChunkManager:
         else:
             self._logger.warning("No stats found for chunk %s to remove.", chunk_range)
 
-    @property
-    def stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
-        """
-        Returns a read-only view of all chunk stats.
-        """
-        return MappingProxyType(self._chunks_stats)
-
     def set_speed_limit(
         self, speed_bps: float, chunk_range: ChunkRange | None = None
     ) -> None:
@@ -447,20 +504,6 @@ class ChunkManager:
             "Cleanup complete: all tasks stopped, files deleted, and state cleared."
         )
 
-    async def _cleanup_temp_files(self) -> None:
-        self._logger.info("Cleaning up temp files")
-        files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
-        files_names_in_storage = {s.key for s in await self._storage.list_data()}
-        files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_names_in_storage
-        ]
-        self._logger.info("Files to delete: %s", files_to_delete_in_storage)
-        delete_tasks = [
-            self._storage.delete_data(s) for s in files_to_delete_in_storage
-        ]
-        if delete_tasks:
-            await asyncio.gather(*delete_tasks)
-
     async def cancel_all_chunks(self) -> None:
         for chunk_range, task in self._chunks_tasks.items():
             task.task.cancel()
@@ -478,49 +521,6 @@ class ChunkManager:
 
         self._chunks_tasks.clear()
         self._check_stop_monitor()
-
-    async def _wait_for_chunks(
-        self,
-        timeout: float | None,
-        return_when: Literal[
-            asyncio.FIRST_COMPLETED,
-            asyncio.ALL_COMPLETED,
-        ],
-    ) -> list[ChunkDownloadStats]:
-        async with self._wait_lock:
-            if not self._chunks_tasks:
-                return []
-
-            all_tasks = [context.task for context in self._chunks_tasks.values()]
-            done, _ = await asyncio.wait(
-                all_tasks,
-                timeout=timeout,
-                return_when=return_when,
-            )
-
-            completed: list[ChunkDownloadStats] = []
-
-            for chunk_range, task_context in self._chunks_tasks.items():
-                if task_context.task in done:
-                    completed.append(self._chunks_stats[chunk_range])
-                    try:
-                        _ = task_context.task.result()
-                    except asyncio.CancelledError:
-                        self._logger.info("Chunk %s cancelled by asyncio", chunk_range)
-                    except Exception as e:
-                        self._logger.warning(
-                            "%s: Chunk %s failed: %s",
-                            self._cfg.file_name,
-                            chunk_range,
-                            e,
-                            exc_info=False,
-                        )
-
-            for stats in completed:
-                self._chunks_tasks.pop(stats.range, None)
-
-            self._check_stop_monitor()
-            return completed
 
     async def wait_for_completed_chunks(
         self, timeout: float | None = None
