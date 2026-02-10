@@ -1,6 +1,6 @@
 import logging
 import pytest
-from sDownload.services.downloader_manager.file_assembler import FileAssembler
+from sDownload.services.downloader_manager.chunk_utils import reconstruct_file
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
@@ -9,17 +9,12 @@ from sDownload.services.downloader_manager.download_stats_models import (
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
 
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("test_assembler_integration")
+logger = logging.getLogger("test_reconstructor_integration")
 
 
 @pytest.fixture
 def storage(tmp_path):
     return LocalStorage(storage_dir=tmp_path)
-
-
-@pytest.fixture
-def assembler(storage):
-    return FileAssembler(storage=storage, logger=logger)
 
 
 def create_stats(
@@ -37,7 +32,7 @@ def create_stats(
 
 
 @pytest.mark.asyncio
-async def test_assembler_merge_real_files(assembler, tmp_path):
+async def test_reconstructor_merge_real_files(storage, tmp_path):
 
     chunk1_name = "chunk_0_4.bin"
     chunk2_name = "chunk_5_9.bin"
@@ -59,8 +54,8 @@ async def test_assembler_merge_real_files(assembler, tmp_path):
 
     final_name = "merged_final.bin"
 
-    result_key = await assembler.merge_chunks(
-        stats_list=stats, final_filename=final_name, total_file_size=15
+    result_key = await reconstruct_file(
+        storage=storage, stats_list=stats, final_filename=final_name, total_file_size=15
     )
 
     assert result_key == final_name
@@ -72,7 +67,7 @@ async def test_assembler_merge_real_files(assembler, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_assembler_merge_complex_overlaps(assembler, tmp_path):
+async def test_reconstructor_merge_complex_overlaps(storage, tmp_path):
 
     total_size = 100
     ideal_content = bytes([i % 256 for i in range(total_size)])
@@ -86,8 +81,13 @@ async def test_assembler_merge_complex_overlaps(assembler, tmp_path):
         (tmp_path / name).write_bytes(content)
         stats.append(create_stats(name, start, end, EDownloadStatus.COMPLETED))
 
-    final_name = "complex_assembly.bin"
-    await assembler.merge_chunks(stats, final_name, total_size)
+    final_name = "complex_reconstruction.bin"
+    await reconstruct_file(
+        storage=storage,
+        stats_list=stats,
+        final_filename=final_name,
+        total_file_size=total_size,
+    )
 
     final_file = tmp_path / final_name
     assert final_file.exists()
@@ -96,7 +96,7 @@ async def test_assembler_merge_complex_overlaps(assembler, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_assembler_merge_with_redundant_chunks(assembler, tmp_path):
+async def test_reconstructor_merge_with_redundant_chunks(storage, tmp_path):
 
     (tmp_path / "cA.bin").write_bytes(b"A" * 51)
     (tmp_path / "cB.bin").write_bytes(b"B" * 11)
@@ -109,7 +109,12 @@ async def test_assembler_merge_with_redundant_chunks(assembler, tmp_path):
     ]
 
     final_name = "redundant.bin"
-    await assembler.merge_chunks(stats, final_name, 101)
+    await reconstruct_file(
+        storage=storage,
+        stats_list=stats,
+        final_filename=final_name,
+        total_file_size=101,
+    )
 
     final_file = tmp_path / final_name
     assert final_file.read_bytes() == (b"A" * 51 + b"C" * 50)
