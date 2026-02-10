@@ -1,0 +1,140 @@
+import asyncio
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from sDownload.services.downloader_manager.chunk_utils.succession import (
+    run_chunk_succession,
+)
+from sDownload.interfaces.protocols.chunk_models import ChunkRange
+from sDownload.services.downloader_manager.download_stats_models import (
+    ChunkDownloadStats,
+    EDownloadStatus,
+)
+
+
+@pytest.fixture
+def mock_storage():
+    storage = MagicMock()
+    storage.crop_file = AsyncMock()
+    storage.move_data = AsyncMock()
+    return storage
+
+
+@pytest.fixture
+def stats_pre():
+    stats = ChunkDownloadStats(
+        chunk_file_name="chunk_A.bin", range=ChunkRange(0, 100), file_size=101
+    )
+    # bytes_downloaded is set in tests
+    return stats
+
+
+@pytest.fixture
+def stats_succ():
+    return ChunkDownloadStats(
+        chunk_file_name="chunk_B.bin", range=ChunkRange(50, 100), file_size=51
+    )
+
+
+@pytest.mark.asyncio
+async def test_succession_success(mock_storage, stats_pre, stats_succ):
+    """Scenario 1: Successful Succession"""
+    range_succ = stats_succ.range
+
+    # Predecessor reached goal and was cancelled
+    stats_pre.limit_qt_bytes = 51
+    stats_pre.bytes_downloaded = 55
+
+    # Use a real Future to avoid issues with asyncio.wait
+    pre_task = asyncio.Future()
+    pre_task.set_exception(asyncio.CancelledError())
+
+    result = await run_chunk_succession(mock_storage, stats_pre, stats_succ, pre_task)
+
+    assert result == range_succ
+    assert stats_succ.status == EDownloadStatus.COMPLETED
+    assert stats_pre.status == EDownloadStatus.DEPRECATED
+    assert stats_succ.bytes_downloaded == 51  # 100 - 50 + 1
+
+    mock_storage.crop_file.assert_called_once_with("chunk_A.bin", 50, 100)
+    mock_storage.move_data.assert_called_once_with("chunk_A.bin", "chunk_B.bin")
+
+
+@pytest.mark.asyncio
+async def test_succession_predecessor_failed(mock_storage, stats_pre, stats_succ):
+    """Scenario 2: Predecessor Task Failed"""
+    pre_task = asyncio.Future()
+    pre_task.set_exception(ValueError("Network Error"))
+
+    with pytest.raises(RuntimeError, match="Predecessor failed: Network Error"):
+        await run_chunk_succession(
+            mock_storage,
+            stats_pre,
+            stats_succ,
+            pre_task,
+        )
+
+    assert stats_succ.status == EDownloadStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_succession_insufficient_data(mock_storage, stats_pre, stats_succ):
+    """Scenario 3: Insufficient Data"""
+    # Predecessor task finished but didn't reach limit
+    stats_pre.limit_qt_bytes = 60
+    stats_pre.bytes_downloaded = 50
+
+    pre_task = asyncio.Future()
+    pre_task.set_result(None)
+
+    with pytest.raises(RuntimeError, match="Insufficient data"):
+        await run_chunk_succession(
+            mock_storage,
+            stats_pre,
+            stats_succ,
+            pre_task,
+        )
+
+    assert stats_succ.status == EDownloadStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_succession_cancelled(mock_storage, stats_pre, stats_succ):
+    """Scenario 4: Succession Cancellation"""
+    # Mocking wait to raise cancellation for the succession itself
+    with pytest.raises(asyncio.CancelledError):
+        # We need a way to trigger cancellation mid-succession.
+        # Let's mock storage.crop_file to raise it.
+        mock_storage.crop_file.side_effect = asyncio.CancelledError()
+
+        await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
+
+    assert stats_succ.status == EDownloadStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_succession_storage_error(mock_storage, stats_pre, stats_succ):
+    """Scenario 5: Storage Error"""
+    stats_pre.limit_qt_bytes = 51
+    stats_pre.bytes_downloaded = 60
+
+    mock_storage.move_data.side_effect = IOError("Disk full")
+
+    with pytest.raises(IOError, match="Disk full"):
+        await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
+
+    assert stats_succ.status == EDownloadStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_succession_init_signal(mock_storage, stats_pre, stats_succ):
+    """Scenario 6: Verify init_signal is set immediately"""
+    init_signal = asyncio.Event()
+
+    pre_task = asyncio.Future()
+    pre_task.set_result(None)
+
+    await run_chunk_succession(
+        mock_storage, stats_pre, stats_succ, pre_task, init_signal=init_signal
+    )
+
+    assert init_signal.is_set()
