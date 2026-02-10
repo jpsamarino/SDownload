@@ -21,6 +21,8 @@ from sDownload.interfaces.protocols.file_storage_protocol import (
     FileRangeConfig,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ChunkTaskContext(NamedTuple):
     task: asyncio.Task
@@ -33,12 +35,10 @@ class ChunkManager:
         cfg: DownloadConfig,
         downloader: DownloaderProtocol,
         storage: FileStorageProtocol,
-        logger: logging.Logger = logging.getLogger(__name__),
     ):
         self._cfg = cfg
         self._downloader = downloader
         self._storage = storage
-        self._logger = logger
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
         self._chunks_tasks: dict[ChunkRange, ChunkTaskContext] = {}
         self._wait_lock = asyncio.Lock()
@@ -73,11 +73,9 @@ class ChunkManager:
                 try:
                     await ctx_predecessor.task
                 except asyncio.CancelledError:
-                    self._logger.info(
-                        "Predecessor task %s cancelled.", range_predecessor
-                    )
+                    logger.info("Predecessor task %s cancelled.", range_predecessor)
                 except Exception as e:
-                    self._logger.warning(
+                    logger.warning(
                         "Predecessor task %s failed: %s", range_predecessor, e
                     )
                     predecessor_error = e
@@ -113,14 +111,12 @@ class ChunkManager:
             stats_successor.set_status(EDownloadStatus.COMPLETED)
             stats_predecessor.set_status(EDownloadStatus.DEPRECATED)
             stats_successor.bytes_downloaded = end_crop - start_crop + 1
-            self._logger.info(
-                "Succession complete: %s is now COMPLETED.", range_successor
-            )
+            logger.info("Succession complete: %s is now COMPLETED.", range_successor)
 
             return range_successor
 
         except asyncio.CancelledError:
-            self._logger.info("_run_succession cancelled in task %s.", range_successor)
+            logger.info("_run_succession cancelled in task %s.", range_successor)
             stats_successor.set_status(EDownloadStatus.CANCELLED)
             if ctx_predecessor and not ctx_predecessor.task.done():
                 ctx_predecessor.task.cancel()
@@ -174,7 +170,7 @@ class ChunkManager:
         stats.set_status(EDownloadStatus.DOWNLOADING)
         task_context.init_signal.set()
         try:
-            self._logger.info(
+            logger.info(
                 "byte range [%s]-[%s]", chunk_range.start, chunk_range.end or "EOF"
             )
             raw_it = self._downloader.download_chunk(
@@ -190,23 +186,23 @@ class ChunkManager:
                     f"Chunk size error: expected {stats.file_size} bytes, got {stats.bytes_downloaded} bytes"
                 )
             stats.set_status(EDownloadStatus.COMPLETED)
-            self._logger.info("[%s] ending", stats.chunk_file_name)
+            logger.info("[%s] ending", stats.chunk_file_name)
 
         except asyncio.CancelledError:
             # If the cancellation happened because we reached the useful limit
             if stats.limit_qt_bytes and stats.bytes_downloaded >= stats.limit_qt_bytes:
                 stats.set_status(EDownloadStatus.DEPRECATED)
-                self._logger.info(
+                logger.info(
                     "[%s] goal reached, marked as DEPRECATED.", stats.chunk_file_name
                 )
             else:
                 stats.set_status(EDownloadStatus.CANCELLED)
-                self._logger.warning("[%s] download cancelled", stats.chunk_file_name)
+                logger.warning("[%s] download cancelled", stats.chunk_file_name)
             raise
 
         except Exception as e:
             stats.set_status(EDownloadStatus.ERROR)
-            self._logger.warning("[%s] failed: %s", stats.chunk_file_name, e)
+            logger.warning("[%s] failed: %s", stats.chunk_file_name, e)
             raise
 
         finally:
@@ -230,16 +226,16 @@ class ChunkManager:
                     active_count += 1
 
                 if active_count > 0:
-                    self._logger.info(
+                    logger.info(
                         "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
                         self._cfg.file_name,
                         total_speed / (1024 * 1024),
                         active_count,
                     )
 
-                    if self._logger.isEnabledFor(logging.DEBUG):
+                    if logger.isEnabledFor(logging.DEBUG):
                         for stats in active_stats:
-                            self._logger.debug(
+                            logger.debug(
                                 " └──▶ Chunk [%d-%d] %.1f%% @ %.2f MB/s",
                                 stats.range.start,
                                 stats.range.end,
@@ -288,9 +284,9 @@ class ChunkManager:
                     try:
                         _ = task_context.task.result()
                     except asyncio.CancelledError:
-                        self._logger.info("Chunk %s cancelled by asyncio", chunk_range)
+                        logger.info("Chunk %s cancelled by asyncio", chunk_range)
                     except Exception as e:
-                        self._logger.warning(
+                        logger.warning(
                             "%s: Chunk %s failed: %s",
                             self._cfg.file_name,
                             chunk_range,
@@ -305,13 +301,13 @@ class ChunkManager:
             return completed
 
     async def _cleanup_temp_files(self) -> None:
-        self._logger.info("Cleaning up temp files")
+        logger.info("Cleaning up temp files")
         files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
         files_names_in_storage = {s.key for s in await self._storage.list_data()}
         files_to_delete_in_storage = [
             s for s in files_to_delete if s in files_names_in_storage
         ]
-        self._logger.info("Files to delete: %s", files_to_delete_in_storage)
+        logger.info("Files to delete: %s", files_to_delete_in_storage)
         delete_tasks = [
             self._storage.delete_data(s) for s in files_to_delete_in_storage
         ]
@@ -323,7 +319,7 @@ class ChunkManager:
     ) -> None:
         stats = self._chunks_stats.get(chunk_range)
         if stats and stats.status == EDownloadStatus.COMPLETED:
-            self._logger.info("Chunk %s already completed", chunk_range)
+            logger.info("Chunk %s already completed", chunk_range)
             return
         if chunk_range not in self._chunks_tasks:
             self._register_chunk_stats(chunk_range, target_speed_bps)
@@ -334,7 +330,7 @@ class ChunkManager:
             if self._monitor_task is None or self._monitor_task.done():
                 self._monitor_task = asyncio.create_task(self._monitor_loop())
         else:
-            self._logger.info("Already have a task for chunk %s", chunk_range)
+            logger.info("Already have a task for chunk %s", chunk_range)
 
     def resize_chunk(self, current_range: ChunkRange, new_range: ChunkRange) -> None:
         if new_range not in current_range:
@@ -384,14 +380,14 @@ class ChunkManager:
                     and not task_a.task.done()
                     and task_a_stats.bytes_downloaded != task_a_stats.file_size
                 ):
-                    self._logger.info(
+                    logger.info(
                         "Limit reached for %s. Triggering succession to %s.",
                         current_range,
                         new_range,
                     )
                     task_a.task.cancel()
                 elif task_a_stats.bytes_downloaded == task_a_stats.file_size:
-                    self._logger.info(
+                    logger.info(
                         "Task %s finished after limit. It will be succession to %s.",
                         current_range,
                         new_range,
@@ -424,13 +420,13 @@ class ChunkManager:
                     task_context_to_cancel.task.cancel()
                     await task_context_to_cancel.task
                 except asyncio.CancelledError:
-                    self._logger.info("Chunk task %s cancelled.", chunk_range)
+                    logger.info("Chunk task %s cancelled.", chunk_range)
                 except Exception as e:
-                    self._logger.warning("Chunk task %s failed: %s", chunk_range, e)
+                    logger.warning("Chunk task %s failed: %s", chunk_range, e)
                 del self._chunks_tasks[chunk_range]
                 return True
 
-            self._logger.info(
+            logger.info(
                 "Chunk %s not cancelled because its status is %s",
                 chunk_range,
                 self._chunks_stats[chunk_range].status,
@@ -440,7 +436,7 @@ class ChunkManager:
 
     async def delete_chunk_data(self, chunk_range: ChunkRange) -> None:
         if chunk_range in self._chunks_tasks:
-            self._logger.info(
+            logger.info(
                 "Cancelling active task for chunk %s before removal.", chunk_range
             )
             await self.cancel_chunk(chunk_range)
@@ -448,7 +444,7 @@ class ChunkManager:
         stats = self._chunks_stats.pop(chunk_range, None)
 
         if stats:
-            self._logger.info(
+            logger.info(
                 "Removing chunk %s: deleting file %s",
                 chunk_range,
                 stats.chunk_file_name,
@@ -456,14 +452,14 @@ class ChunkManager:
             try:
                 await self._storage.delete_data(stats.chunk_file_name)
             except Exception as e:
-                self._logger.warning(
+                logger.warning(
                     "Failed to delete file %s for chunk %s: %s",
                     stats.chunk_file_name,
                     chunk_range,
                     e,
                 )
         else:
-            self._logger.warning("No stats found for chunk %s to remove.", chunk_range)
+            logger.warning("No stats found for chunk %s to remove.", chunk_range)
 
     def set_speed_limit(
         self, speed_bps: float, chunk_range: ChunkRange | None = None
@@ -473,7 +469,7 @@ class ChunkManager:
             if stats:
                 stats.target_speed_bps = speed_bps
             else:
-                self._logger.warning("No chunk stats found for key: %s", chunk_range)
+                logger.warning("No chunk stats found for key: %s", chunk_range)
         else:
             for stats in self._chunks_stats.values():
                 stats.target_speed_bps = speed_bps
@@ -490,7 +486,7 @@ class ChunkManager:
         """
         Stops all active processes, deletes temporary files, and clears internal state.
         """
-        self._logger.info("Performing comprehensive cleanup of ChunkManager")
+        logger.info("Performing comprehensive cleanup of ChunkManager")
 
         # 1. Stop all active chunks and the monitor
         await self.cancel_all_chunks()
@@ -500,7 +496,7 @@ class ChunkManager:
 
         # 3. Clear internal statistics
         self._chunks_stats.clear()
-        self._logger.info(
+        logger.info(
             "Cleanup complete: all tasks stopped, files deleted, and state cleared."
         )
 
@@ -580,11 +576,11 @@ class ChunkManager:
             )
 
         dest_key = self._cfg.file_name
-        self._logger.info("Merging %d fragments into %s", len(merge_configs), dest_key)
+        logger.info("Merging %d fragments into %s", len(merge_configs), dest_key)
         await self._storage.merge_ranges(merge_configs, dest_key)
 
         if cleanup:
-            self._logger.info("Cleaning up ChunkManager after merge...")
+            logger.info("Cleaning up ChunkManager after merge...")
             await self.cleanup()
 
         return dest_key

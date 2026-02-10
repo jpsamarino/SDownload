@@ -65,18 +65,14 @@ async def test_chunk_manager_with_nginx(setup_downloader_and_config, storage):
     assert setup["result"].file_name == "file_100k.bin"
     assert setup["result"].file_size == 102400
 
-    logger = logging.getLogger("chunk_manager_test")
-    logger.setLevel(logging.INFO)
-
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     # Start chunks
     chunk_manager.start_chunk(ChunkRange(0, 51199))
     chunk_manager.start_chunk(ChunkRange(51200, None))
 
     # Wait for completion
-    completed = await chunk_manager.wait_for_completed_chunks()
-    logger.info(f"Completed chunks: {completed}")
+    await chunk_manager.wait_for_completed_chunks()
 
     # Verify downloaded bytes
     total_downloaded = chunk_manager.get_downloaded_bytes()
@@ -92,8 +88,7 @@ async def test_chunk_manager_cancel_chunks(setup_downloader_and_config, storage)
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("chunk_manager_cancel_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     chunk_manager.start_chunk(ChunkRange(0, 51200))
     chunk_manager.start_chunk(ChunkRange(51201, 102399))
@@ -120,8 +115,7 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("chunk_manager_cancel_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     chunk_manager.start_chunk(ChunkRange(102390, 511990))
     chunk_manager.start_chunk(ChunkRange(51200, 102381))
@@ -141,8 +135,7 @@ async def test_chunk_manager_cleanup_temp_files(setup_downloader_and_config, sto
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("chunk_manager_cleanup_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     chunk_manager.start_chunk(ChunkRange(0, 51192))
     chunk_manager.start_chunk(ChunkRange(51203, 102399))
@@ -167,8 +160,7 @@ async def test_chunk_manager_stats_tracking(setup_downloader_and_config, storage
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("chunk_manager_stats_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     chunk_manager.start_chunk(ChunkRange(0, 51170))
     chunk_manager.start_chunk(ChunkRange(51171, 102399))
@@ -206,8 +198,7 @@ async def test_chunk_manager_cancel_all_chunks(setup_downloader_and_config, stor
     downloader = setup["downloader"]
     download_config.max_speed_bytes_per_second = 1024  # Override for this test
 
-    logger = logging.getLogger("chunk_manager_cancel_all_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     chunk_manager.start_chunk(ChunkRange(0, 511990))
     chunk_manager.start_chunk(ChunkRange(512000, 1023990))
@@ -238,8 +229,7 @@ async def test_resize_chunk_success_with_finished_chunks(
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("resize_chunk_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
     original_range = ChunkRange(0, 51199)
     chunk_manager.start_chunk(original_range)
     done_chunks = await chunk_manager.wait_for_completed_chunks(1.0)
@@ -274,8 +264,7 @@ async def test_resize_chunk_success_with_downloading_chunks(
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("resize_chunk_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
     original_range = ChunkRange(0, 51199)
     chunk_manager.start_chunk(original_range)
     await asyncio.sleep(0.1)
@@ -329,8 +318,7 @@ async def test_resize_chunk_head_cut(setup_downloader_and_config, storage):
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("resize_chunk_head_cut_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     original_range = ChunkRange(0, 51123)
     chunk_manager.start_chunk(original_range)
@@ -355,8 +343,7 @@ async def test_resize_chunk_cancel_successor(setup_downloader_and_config, storag
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("resize_chunk_cancel_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     original_range = ChunkRange(0, 52221)
     chunk_manager.start_chunk(original_range)
@@ -422,8 +409,7 @@ async def test_chunk_manager_remove_chunk_integration(
     download_config = setup["download_config"]
     downloader = setup["downloader"]
 
-    logger = logging.getLogger("chunk_manager_remove_test")
-    chunk_manager = ChunkManager(download_config, downloader, storage, logger)
+    chunk_manager = ChunkManager(download_config, downloader, storage)
 
     range_1 = ChunkRange(0, 102399)  # 100KB
     range_2 = ChunkRange(102400, 204799)  # 100KB

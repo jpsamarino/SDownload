@@ -66,8 +66,6 @@ def chunk_manager(download_config, mock_downloader, temp_storage):
 
 @pytest.mark.asyncio
 async def test_chunk_manager_monitor_loop(chunk_manager):
-    logger = logging.getLogger("test_chunk_manager")
-    chunk_manager._logger = logger
     manager = chunk_manager
 
     chunk = ChunkRange(0, 4999)
@@ -164,8 +162,6 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
 @pytest.mark.asyncio
 async def test_lock_mechanism(chunk_manager):
     manager = chunk_manager
-    logger = logging.getLogger("test_concurrency")
-    manager._logger = logger
 
     # Test that we cannot run two wait operations concurrently
     # We will start a LONG wait, and try to start another one immediately.
