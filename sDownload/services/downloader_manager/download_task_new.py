@@ -33,7 +33,7 @@ class DownloadConfig:
     file_created_at: datetime
     protocol_data: Optional[dict]
     max_connections_per_download: int = 1
-    max_speed_bytes_per_second: float = float("inf")  # bytes/s
+    max_speed_bytes_per_second: int | None = None  # use None for unlimited
     use_chunked_download: bool = (True,)
 
 

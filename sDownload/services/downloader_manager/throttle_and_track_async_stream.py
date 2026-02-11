@@ -20,7 +20,7 @@ async def throttle_and_track_async_stream(
             stats.add_qt_bytes_downloaded(qt_bytes)
             accumulated_bytes += qt_bytes
             yield data
-            if accumulated_bytes > stats.target_speed_bps:
+            if stats.target_speed_bps and accumulated_bytes > stats.target_speed_bps:
                 time_elapsed = time.monotonic() - start_time
                 time_expected = accumulated_bytes / stats.target_speed_bps
                 if time_elapsed < time_expected:

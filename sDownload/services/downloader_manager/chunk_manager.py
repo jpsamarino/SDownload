@@ -132,7 +132,7 @@ class ChunkManager:
     def _register_chunk_stats(
         self,
         chunk_range: ChunkRange,
-        target_speed_bps: float | None = None,
+        target_speed_bps: int | None = None,
         status: EDownloadStatus = EDownloadStatus.PENDING,
     ) -> ChunkDownloadStats:
 
@@ -146,16 +146,13 @@ class ChunkManager:
             else None
         )
         name = f"{chunk_range}_{self._cfg.file_name}.sdownload"
-        _target_speed_bps = (
-            target_speed_bps or self._cfg.max_speed_bytes_per_second * 0.1
-        )
 
         stats = ChunkDownloadStats(
             chunk_file_name=name,
             range=chunk_range,
             file_size=file_size,
             status=status,
-            target_speed_bps=_target_speed_bps,
+            target_speed_bps=target_speed_bps,
         )
 
         self._chunks_stats[chunk_range] = stats
@@ -315,7 +312,7 @@ class ChunkManager:
             await asyncio.gather(*delete_tasks)
 
     def start_chunk(
-        self, chunk_range: ChunkRange, target_speed_bps: float | None = None
+        self, chunk_range: ChunkRange, target_speed_bps: int | None = None
     ) -> None:
         stats = self._chunks_stats.get(chunk_range)
         if stats and stats.status == EDownloadStatus.COMPLETED:

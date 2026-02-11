@@ -27,7 +27,7 @@ class ChunkDownloadStats:
     status: EDownloadStatus = EDownloadStatus.PENDING
     start_time: float = field(default_factory=time.monotonic)
     last_update: float = field(default_factory=time.monotonic)
-    target_speed_bps: float = float("inf")
+    target_speed_bps: int | None = None  # use None for unlimited
     limit_qt_bytes: int = field(default=0, init=False)
     _on_limit: Callable[[], None] | None = field(default=None, init=False)
 

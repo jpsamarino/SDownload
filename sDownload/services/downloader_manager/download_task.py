@@ -90,8 +90,7 @@ class DownloadTask:
             chunk_file_name=name,
             range=ChunkRange(start, end_byte),
             file_size=file_size,
-            target_speed_bps=self._target_speed
-            * 0.1,  # mudar para 1 está 0.1 para testes
+            target_speed_bps=self._target_speed,
         )
         self._chunks_stats[key] = stats
 
