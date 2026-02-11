@@ -16,9 +16,15 @@ class FixedWindowThrottler(ThrottlerProtocol):
     Zero clock calls on unlimited downloads.
     """
 
-    def __init__(self, interval_ms: int = 200, min_chunk_size: int = 32768):
+    def __init__(
+        self,
+        interval_ms: int = 200,
+        min_chunk_size: int = 32768,
+        max_sleep_seconds: float = 1.0,
+    ):
         self.interval_s = interval_ms / 1000.0
         self.min_chunk_size = min_chunk_size
+        self.max_sleep_seconds = max_sleep_seconds
 
     async def wrap(
         self, it: AsyncGenerator[bytes, None], stats: ChunkDownloadStats
@@ -59,7 +65,9 @@ class FixedWindowThrottler(ThrottlerProtocol):
 
                     if elapsed < expected:
 
-                        await asyncio.sleep(min(expected - elapsed, 1))
+                        await asyncio.sleep(
+                            min(expected - elapsed, self.max_sleep_seconds)
+                        )
                         last_check = time.monotonic()
                     else:
                         last_check = now

@@ -45,8 +45,7 @@ async def test_fixed_window_throttling(stats):
     stats.target_speed_bps = 5  # 5 bytes per second
     throttler = FixedWindowThrottler(min_chunk_size=1)
 
-    # Send 10 bytes immediately
-    data = [b"1234567890"]
+    data = [b"1", b"2", b"3", b"4", b"5", b"6", b"7", b"8", b"9", b"0"]
 
     start = time.monotonic()
     gen = throttler.wrap(async_gen(data), stats)
@@ -55,8 +54,9 @@ async def test_fixed_window_throttling(stats):
     end = time.monotonic()
 
     # Expected sleep: 10 bytes / 5 bps = 2 seconds.
-    # Since it checks AFTER yielding, it should sleep after the 10th byte.
-    assert (end - start) >= 1.5  # Allow for some overhead/jitter
+    total_time = end - start
+    assert total_time >= 1.9
+    assert total_time < 2.1
 
 
 @pytest.mark.asyncio
@@ -74,3 +74,50 @@ async def test_fixed_window_no_limit(stats):
     end = time.monotonic()
 
     assert (end - start) < 0.5  # Should be very fast
+
+
+@pytest.mark.asyncio
+async def test_fixed_window_max_sleep_cap(stats):
+    """
+    Verify that sleep is capped at max_sleep_seconds even if the debt is huge.
+    Simulates a massive buffer dump followed by a slow connection.
+    """
+    stats.target_speed_bps = 100  # 100 bytes/s
+    max_sleep = 0.5
+    throttler = FixedWindowThrottler(max_sleep_seconds=max_sleep, min_chunk_size=1)
+
+    # Send 1000 bytes. Expected sleep = 10s. Max sleep = 0.5s.
+    data = [b"A" * 1000]
+
+    start = time.monotonic()
+    gen = throttler.wrap(async_gen(data), stats)
+    async for _ in gen:
+        pass
+    end = time.monotonic()
+    elapsed = end - start
+
+    # Validation: It should have slept at least max_sleep (0.5s)
+    # but NOT the full expected 10s.
+    assert elapsed >= max_sleep
+    assert elapsed < 2.0  # Should be close to 0.5s, definitely not 10s.
+
+
+@pytest.mark.asyncio
+async def test_fixed_window_custom_sleep_cap(stats):
+    """Verify custom max_sleep_seconds configuration. Using small cap to test precision."""
+    stats.target_speed_bps = 100
+    custom_cap = 0.2
+    throttler = FixedWindowThrottler(max_sleep_seconds=custom_cap, min_chunk_size=1)
+
+    # Huge chunk: 500 bytes -> 5s sleep expected
+    data = [b"A" * 500]
+
+    start = time.monotonic()
+    gen = throttler.wrap(async_gen(data), stats)
+    async for _ in gen:
+        pass
+    end = time.monotonic()
+
+    # Should sleep around 0.2s (+overhead), but definitely > 0.15s and < 1s
+    assert (end - start) >= 0.15
+    assert (end - start) < 0.5
