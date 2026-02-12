@@ -31,7 +31,10 @@ def stats_pre():
 @pytest.fixture
 def stats_succ():
     return ChunkDownloadStats(
-        chunk_file_name="chunk_B.bin", range=ChunkRange(50, 100), file_size=51
+        chunk_file_name="chunk_B.bin",
+        range=ChunkRange(50, 100),
+        file_size=51,
+        status=EDownloadStatus.AWAITING_SUCCESSION,
     )
 
 
@@ -138,3 +141,14 @@ async def test_succession_init_signal(mock_storage, stats_pre, stats_succ):
     )
 
     assert init_signal.is_set()
+
+
+@pytest.mark.asyncio
+async def test_succession_invalid_successor_state(mock_storage, stats_pre, stats_succ):
+    """Scenario 7: Successor in invalid state raises RuntimeError"""
+    stats_succ.set_status(EDownloadStatus.PENDING)
+
+    with pytest.raises(
+        RuntimeError, match="Successor is not in AWAITING_SUCCESSION state"
+    ):
+        await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)

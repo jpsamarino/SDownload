@@ -17,7 +17,10 @@ from sDownload.services.downloader_manager.download_config import DownloadConfig
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
-from sDownload.services.downloader_manager.chunk_utils import monitor_download_progress
+from sDownload.services.downloader_manager.chunk_utils import (
+    monitor_download_progress,
+    run_chunk_succession,
+)
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
 logger = logging.getLogger(__name__)
@@ -49,84 +52,6 @@ class ChunkManager:
         Returns a read-only view of all chunk stats.
         """
         return MappingProxyType(self._chunks_stats)
-
-    async def _run_succession(
-        self, range_predecessor: ChunkRange, range_successor: ChunkRange
-    ) -> ChunkRange:
-
-        stats_predecessor = self._chunks_stats[range_predecessor]
-        stats_successor = self._chunks_stats[range_successor]
-        ctx_predecessor = self._chunks_tasks.get(range_predecessor)
-        ctx_successor = self._chunks_tasks[range_successor]
-
-        ctx_successor.init_signal.set()
-
-        predecessor_error: Exception | None = None
-
-        try:
-            if ctx_predecessor:
-                # need use asyncio.wait to indentify self.cancelled() (_run_succession)
-                await asyncio.wait(
-                    [ctx_predecessor.task], return_when=asyncio.FIRST_COMPLETED
-                )
-                try:
-                    await ctx_predecessor.task
-                except asyncio.CancelledError:
-                    logger.info("Predecessor task %s cancelled.", range_predecessor)
-                except Exception as e:
-                    logger.warning(
-                        "Predecessor task %s failed: %s", range_predecessor, e
-                    )
-                    predecessor_error = e
-
-            limit = stats_predecessor.limit_qt_bytes
-
-            if predecessor_error:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-                raise RuntimeError(
-                    f"Predecessor failed: {predecessor_error}"
-                ) from predecessor_error
-
-            if limit and stats_predecessor.bytes_downloaded < limit:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-                raise RuntimeError(
-                    f"Insufficient data: {stats_predecessor.bytes_downloaded}/{limit} bytes"
-                )
-
-            start_crop = range_successor.start - range_predecessor.start
-            end_crop = (
-                (range_successor.end - range_predecessor.start)
-                if range_successor.end is not None
-                else stats_predecessor.bytes_downloaded - 1
-            )
-
-            await self._storage.crop_file(
-                stats_predecessor.chunk_file_name, start_crop, end_crop
-            )
-            await self._storage.move_data(
-                stats_predecessor.chunk_file_name, stats_successor.chunk_file_name
-            )
-
-            stats_successor.set_status(EDownloadStatus.COMPLETED)
-            stats_predecessor.set_status(EDownloadStatus.DEPRECATED)
-            stats_successor.bytes_downloaded = end_crop - start_crop + 1
-            logger.info("Succession complete: %s is now COMPLETED.", range_successor)
-
-            return range_successor
-
-        except asyncio.CancelledError:
-            logger.info("_run_succession cancelled in task %s.", range_successor)
-            stats_successor.set_status(EDownloadStatus.CANCELLED)
-            if ctx_predecessor and not ctx_predecessor.task.done():
-                ctx_predecessor.task.cancel()
-                await ctx_predecessor.task
-            stats_predecessor.remove_limit_observer()
-            raise
-
-        except Exception:
-            if stats_successor.status != EDownloadStatus.ERROR:
-                stats_successor.set_status(EDownloadStatus.ERROR)
-            raise
 
     def _register_chunk_stats(
         self,
@@ -318,11 +243,11 @@ class ChunkManager:
                 f"Range {current_range} is not in DOWNLOADING or COMPLETED state"
             )
 
-        self._register_chunk_stats(
+        stats_b = self._register_chunk_stats(
             chunk_range=new_range,
             target_speed_bps=stats_a.target_speed_bps,
-            status=EDownloadStatus.AWAITING_SUCCESSION,
         )
+        stats_b.set_status(EDownloadStatus.AWAITING_SUCCESSION)
         limit = (
             new_range.end - current_range.start + 1
             if new_range.end is not None
@@ -358,9 +283,20 @@ class ChunkManager:
             ):
                 stats_a.add_limit_observer(limit, stop_predecessor)
 
+        ctx_predecessor = self._chunks_tasks.get(current_range)
+        init_signal = asyncio.Event()
+
         self._chunks_tasks[new_range] = ChunkTaskContext(
-            task=asyncio.create_task(self._run_succession(current_range, new_range)),
-            init_signal=asyncio.Event(),
+            task=asyncio.create_task(
+                run_chunk_succession(
+                    storage=self._storage,
+                    stats_predecessor=stats_a,
+                    stats_successor=stats_b,
+                    predecessor_task=ctx_predecessor.task if ctx_predecessor else None,
+                    init_signal=init_signal,
+                )
+            ),
+            init_signal=init_signal,
         )
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:

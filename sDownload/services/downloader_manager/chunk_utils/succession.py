@@ -25,10 +25,12 @@ async def run_chunk_succession(
 
     range_predecessor = stats_predecessor.range
     range_successor = stats_successor.range
-    stats_successor.set_status(EDownloadStatus.AWAITING_SUCCESSION)
     predecessor_error: Exception | None = None
 
     try:
+        if stats_successor.status != EDownloadStatus.AWAITING_SUCCESSION:
+            raise RuntimeError("Successor is not in AWAITING_SUCCESSION state")
+
         if predecessor_task:
             await asyncio.wait([predecessor_task], return_when=asyncio.FIRST_COMPLETED)
             try:
