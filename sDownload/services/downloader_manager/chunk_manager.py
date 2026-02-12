@@ -20,6 +20,7 @@ from sDownload.services.downloader_manager.throttle_and_track_async_stream impor
 from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
     run_chunk_succession,
+    cleanup_temp_files,
 )
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
@@ -179,20 +180,6 @@ class ChunkManager:
 
             self._check_stop_monitor()
             return completed
-
-    async def _cleanup_temp_files(self) -> None:
-        logger.info("Cleaning up temp files")
-        files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
-        files_names_in_storage = {s.key for s in await self._storage.list_data()}
-        files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_names_in_storage
-        ]
-        logger.info("Files to delete: %s", files_to_delete_in_storage)
-        delete_tasks = [
-            self._storage.delete_data(s) for s in files_to_delete_in_storage
-        ]
-        if delete_tasks:
-            await asyncio.gather(*delete_tasks)
 
     def start_chunk(
         self, chunk_range: ChunkRange, target_speed_bps: int | None = None
@@ -381,13 +368,8 @@ class ChunkManager:
         """
         logger.info("Performing comprehensive cleanup of ChunkManager")
 
-        # 1. Stop all active chunks and the monitor
         await self.cancel_all_chunks()
-
-        # 2. Delete temporary files from disk
-        await self._cleanup_temp_files()
-
-        # 3. Clear internal statistics
+        await cleanup_temp_files(self._storage, self._chunks_stats.values())
         self._chunks_stats.clear()
         logger.info(
             "Cleanup complete: all tasks stopped, files deleted, and state cleared."
