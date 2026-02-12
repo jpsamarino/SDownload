@@ -132,12 +132,10 @@ class ChunkManager:
         return chunk_range
 
     def _check_stop_monitor(self) -> None:
-        if (
-            not self._chunks_tasks
-            and self._monitor_task
-            and not self._monitor_task.done()
-        ):
-            self._monitor_task.cancel()
+        if not self._chunks_tasks and self._monitor_task:
+            if not self._monitor_task.done():
+                self._monitor_task.cancel()
+            self._monitor_task = None
 
     async def _wait_for_chunks(
         self,
