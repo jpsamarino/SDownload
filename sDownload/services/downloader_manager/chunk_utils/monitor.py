@@ -27,13 +27,14 @@ async def monitor_download_progress(
                 for s in chunks_stats.values()
                 if s.status == EDownloadStatus.DOWNLOADING
             ]
-
-            for stats in active_stats:
-                stats.update()
-                total_speed += stats.speed_bps
-                active_count += 1
+            active_count = len(active_stats)
 
             if active_count > 0:
+
+                for stats in active_stats:
+                    stats.update()
+                    total_speed += stats.speed_bps
+
                 logger.info(
                     "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
                     file_name,

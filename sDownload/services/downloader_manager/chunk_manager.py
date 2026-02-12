@@ -1,12 +1,14 @@
 import asyncio
 import logging
-import time
 from collections.abc import AsyncIterable, Mapping
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.protocols.file_storage_protocol import (
+    FileStorageProtocol,
+    FileRangeConfig,
+)
 from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     EDownloadStatus,
@@ -15,11 +17,8 @@ from sDownload.services.downloader_manager.download_config import DownloadConfig
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
+from sDownload.services.downloader_manager.chunk_utils import monitor_download_progress
 from sDownload.utils.range_operations import calculate_optimal_coverage
-from sDownload.interfaces.protocols.file_storage_protocol import (
-    FileStorageProtocol,
-    FileRangeConfig,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -207,45 +206,6 @@ class ChunkManager:
 
         return chunk_range
 
-    async def _monitor_loop(self, interval: float = 0.5) -> None:
-        try:
-            while self._chunks_tasks:
-                total_speed = 0.0
-                active_count = 0
-                active_stats = [
-                    s
-                    for s in self._chunks_stats.values()
-                    if s.status == EDownloadStatus.DOWNLOADING
-                ]
-                for stats in active_stats:
-                    stats.update()
-                    total_speed += stats.speed_bps
-                    active_count += 1
-
-                if active_count > 0:
-                    logger.info(
-                        "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
-                        self._cfg.file_name,
-                        total_speed / (1024 * 1024),
-                        active_count,
-                    )
-
-                    if logger.isEnabledFor(logging.DEBUG):
-                        for stats in active_stats:
-                            logger.debug(
-                                " └──▶ Chunk [%d-%d] %.1f%% @ %.2f MB/s",
-                                stats.range.start,
-                                stats.range.end,
-                                stats.progress,
-                                stats.speed_bps / (1024 * 1024),
-                            )
-                await asyncio.sleep(interval)
-
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._monitor_task = None
-
     def _check_stop_monitor(self) -> None:
         if (
             not self._chunks_tasks
@@ -325,7 +285,9 @@ class ChunkManager:
                 init_signal=asyncio.Event(),
             )
             if self._monitor_task is None or self._monitor_task.done():
-                self._monitor_task = asyncio.create_task(self._monitor_loop())
+                self._monitor_task = asyncio.create_task(
+                    monitor_download_progress(self._chunks_stats, self._cfg.file_name)
+                )
         else:
             logger.info("Already have a task for chunk %s", chunk_range)
 
