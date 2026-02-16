@@ -21,6 +21,7 @@ from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
     run_chunk_succession,
     cleanup_temp_files,
+    download_chunk_supervised,
 )
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
@@ -84,54 +85,6 @@ class ChunkManager:
 
         return stats
 
-    async def _download_chunk(self, chunk_range: ChunkRange) -> ChunkRange | None:
-
-        task_context = self._chunks_tasks[chunk_range]
-        stats = self._chunks_stats[chunk_range]
-
-        stats.set_status(EDownloadStatus.DOWNLOADING)
-        task_context.init_signal.set()
-        try:
-            logger.info(
-                "byte range [%s]-[%s]", chunk_range.start, chunk_range.end or "EOF"
-            )
-            raw_it = self._downloader.download_chunk(
-                self._cfg.download_url, stats.range.start, stats.range.end
-            )
-            tracked = throttle_and_track_async_stream(raw_it, stats)
-            await self._storage.save_binary_data(stats.chunk_file_name, tracked)
-            if (
-                stats.file_size is not None
-                and stats.bytes_downloaded != stats.file_size
-            ):
-                raise IOError(
-                    f"Chunk size error: expected {stats.file_size} bytes, got {stats.bytes_downloaded} bytes"
-                )
-            stats.set_status(EDownloadStatus.COMPLETED)
-            logger.info("[%s] ending", stats.chunk_file_name)
-
-        except asyncio.CancelledError:
-            # If the cancellation happened because we reached the useful limit
-            if stats.limit_qt_bytes and stats.bytes_downloaded >= stats.limit_qt_bytes:
-                stats.set_status(EDownloadStatus.DEPRECATED)
-                logger.info(
-                    "[%s] goal reached, marked as DEPRECATED.", stats.chunk_file_name
-                )
-            else:
-                stats.set_status(EDownloadStatus.CANCELLED)
-                logger.warning("[%s] download cancelled", stats.chunk_file_name)
-            raise
-
-        except Exception as e:
-            stats.set_status(EDownloadStatus.ERROR)
-            logger.warning("[%s] failed: %s", stats.chunk_file_name, e)
-            raise
-
-        finally:
-            stats.update()
-
-        return chunk_range
-
     def _check_stop_monitor(self) -> None:
         if not self._chunks_tasks and self._monitor_task:
             if not self._monitor_task.done():
@@ -189,10 +142,19 @@ class ChunkManager:
             logger.info("Chunk %s already completed", chunk_range)
             return
         if chunk_range not in self._chunks_tasks:
-            self._register_chunk_stats(chunk_range, target_speed_bps)
+            stats = self._register_chunk_stats(chunk_range, target_speed_bps)
+            init_signal = asyncio.Event()
             self._chunks_tasks[chunk_range] = ChunkTaskContext(
-                task=asyncio.create_task(self._download_chunk(chunk_range)),
-                init_signal=asyncio.Event(),
+                task=asyncio.create_task(
+                    download_chunk_supervised(
+                        downloader=self._downloader,
+                        storage=self._storage,
+                        stats=stats,
+                        download_url=self._cfg.download_url,
+                        init_signal=init_signal,
+                    )
+                ),
+                init_signal=init_signal,
             )
             if self._monitor_task is None or self._monitor_task.done():
                 self._monitor_task = asyncio.create_task(
@@ -355,7 +317,6 @@ class ChunkManager:
                 stats.target_speed_bps = speed_bps
 
     def get_downloaded_bytes(self) -> int:
-        # only not error/cancelled chunks
         return sum(
             s.bytes_downloaded
             for s in self._chunks_stats.values()

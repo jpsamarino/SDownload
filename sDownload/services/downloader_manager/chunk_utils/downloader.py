@@ -19,11 +19,14 @@ async def download_chunk_supervised(
     storage: FileStorageProtocol,
     stats: ChunkDownloadStats,
     download_url: str,
+    init_signal: asyncio.Event | None = None,
 ) -> ChunkRange | None:
     """
     Executes a supervised download of a single chunk.
     """
     stats.set_status(EDownloadStatus.DOWNLOADING)
+    if init_signal:
+        init_signal.set()
 
     try:
         logger.info(
