@@ -14,7 +14,10 @@ from sDownload.services.downloader_manager.download_stats_models import (
     EDownloadStatus,
 )
 from sDownload.services.downloader_manager.download_config import DownloadConfig
-
+from sDownload.services.downloader_manager.throttling import (
+    ThrottlerProtocol,
+    get_default_throttler,
+)
 from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
     run_chunk_succession,
@@ -37,10 +40,12 @@ class ChunkManager:
         cfg: DownloadConfig,
         downloader: DownloaderProtocol,
         storage: FileStorageProtocol,
+        throttler: ThrottlerProtocol | None = None,
     ):
         self._cfg = cfg
         self._downloader = downloader
         self._storage = storage
+        self._throttler = throttler or get_default_throttler()
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
         self._chunks_tasks: dict[ChunkRange, ChunkTaskContext] = {}
         self._wait_lock = asyncio.Lock()
@@ -149,6 +154,7 @@ class ChunkManager:
                         storage=self._storage,
                         stats=stats,
                         download_url=self._cfg.download_url,
+                        throttler=self._throttler,
                         init_signal=init_signal,
                     )
                 ),

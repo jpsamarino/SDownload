@@ -7,9 +7,7 @@ from sDownload.services.downloader_manager.download_stats_models import (
 )
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
-    throttle_and_track_async_stream,
-)
+from sDownload.services.downloader_manager.throttling.base import ThrottlerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +17,7 @@ async def download_chunk_supervised(
     storage: FileStorageProtocol,
     stats: ChunkDownloadStats,
     download_url: str,
+    throttler: ThrottlerProtocol,
     init_signal: asyncio.Event | None = None,
 ) -> ChunkRange | None:
     """
@@ -39,7 +38,8 @@ async def download_chunk_supervised(
             download_url, stats.range.start, stats.range.end
         )
 
-        tracked = throttle_and_track_async_stream(raw_it, stats)
+        tracked = throttler.wrap(raw_it, stats)
+
         await storage.save_binary_data(stats.chunk_file_name, tracked)
 
         if stats.file_size is not None and stats.bytes_downloaded != stats.file_size:

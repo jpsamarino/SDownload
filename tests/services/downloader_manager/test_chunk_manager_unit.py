@@ -112,7 +112,13 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
     manager = chunk_manager
 
     async def _fake_download(
-        downloader, storage, stats, download_url, init_signal=None, duration=0.1
+        downloader,
+        storage,
+        stats,
+        download_url,
+        throttler=None,
+        init_signal=None,
+        duration=0.1,
     ):
         await asyncio.sleep(duration)
         stats.bytes_downloaded = 10  # pretend we did it
@@ -141,10 +147,10 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
         # Add tasks manually to avoid complex mocking of start_chunk calling _download_chunk
 
         t1 = asyncio.create_task(
-            _fake_download(None, None, manager._chunks_stats[r1], None, None, 0.1)
+            _fake_download(None, None, manager._chunks_stats[r1], None, duration=0.1)
         )  # Fast
         t2 = asyncio.create_task(
-            _fake_download(None, None, manager._chunks_stats[r2], None, None, 0.5)
+            _fake_download(None, None, manager._chunks_stats[r2], None, duration=0.5)
         )  # Slow
 
         manager._chunks_tasks[r1] = ChunkTaskContext(
@@ -334,7 +340,9 @@ async def test_resize_chunk_invalid_status(chunk_manager):
 
 @pytest.mark.asyncio
 async def test_as_stream_iterator(chunk_manager):
-    async def smart_mock(downloader, storage, stats, download_url, init_signal=None):
+    async def smart_mock(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
         await asyncio.sleep(0.01)
         stats.set_status(EDownloadStatus.COMPLETED)
         stats.bytes_downloaded = stats.file_size or 0
@@ -383,7 +391,9 @@ async def test_chunk_manager_get_active(chunk_manager):
 
 @pytest.mark.asyncio
 async def test_wait_for_chunks_timeout(chunk_manager):
-    async def slow_download(downloader, storage, stats, download_url, init_signal=None):
+    async def slow_download(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
         if init_signal:
             init_signal.set()
         await asyncio.sleep(1.0)
@@ -413,7 +423,7 @@ async def test_cancel_chunk_not_in_tasks(chunk_manager):
 @pytest.mark.asyncio
 async def test_cancel_chunk_already_completed(chunk_manager):
     async def instant_download(
-        downloader, storage, stats, download_url, init_signal=None
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
     ):
         stats.set_status(EDownloadStatus.COMPLETED)
         return stats.range
@@ -497,7 +507,9 @@ async def test_get_downloaded_bytes_status_filter(chunk_manager):
 async def test_remove_chunk_active_cancels_and_cleans(chunk_manager, temp_storage):
     range_ = ChunkRange(0, 100)
 
-    async def slow_download(downloader, storage, stats, download_url, init_signal=None):
+    async def slow_download(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
         if init_signal:
             init_signal.set()
         await asyncio.sleep(5.0)
@@ -613,7 +625,9 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
 async def test_cleanup_comprehensive(chunk_manager, temp_storage):
     range_ = ChunkRange(0, 100)
 
-    async def slow_download(downloader, storage, stats, download_url, init_signal=None):
+    async def slow_download(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
         if init_signal:
             init_signal.set()
         await asyncio.sleep(5.0)
