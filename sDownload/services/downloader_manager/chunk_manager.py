@@ -23,6 +23,8 @@ from sDownload.services.downloader_manager.chunk_utils import (
     run_chunk_succession,
     cleanup_temp_files,
     download_chunk_supervised,
+    reconstruct_file,
+    ReconstructionError,
 )
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
@@ -58,13 +60,18 @@ class ChunkManager:
         """
         return MappingProxyType(self._chunks_stats)
 
-    def _register_chunk_stats(
-        self,
-        chunk_range: ChunkRange,
-        target_speed_bps: int | None = None,
-        status: EDownloadStatus = EDownloadStatus.PENDING,
-    ) -> ChunkDownloadStats:
+    def _get_chunk_file_name(self, chunk_range: ChunkRange) -> str:
+        """
+        Returns the standardized temporary file name for a chunk.
+        """
+        return f"{chunk_range}_{self._cfg.file_name}.sdownload"
 
+    def _get_effective_range_info(
+        self, chunk_range: ChunkRange
+    ) -> tuple[int, int | None]:
+        """
+        Calculates the effective end byte and total size for a chunk range.
+        """
         effective_end = chunk_range.end
         if effective_end is None and self._cfg.file_size is not None:
             effective_end = self._cfg.file_size - 1
@@ -74,7 +81,17 @@ class ChunkManager:
             if effective_end is not None
             else None
         )
-        name = f"{chunk_range}_{self._cfg.file_name}.sdownload"
+        return effective_end, file_size
+
+    def _register_chunk_stats(
+        self,
+        chunk_range: ChunkRange,
+        target_speed_bps: int | None = None,
+        status: EDownloadStatus = EDownloadStatus.PENDING,
+    ) -> ChunkDownloadStats:
+
+        _, file_size = self._get_effective_range_info(chunk_range)
+        name = self._get_chunk_file_name(chunk_range)
 
         stats = ChunkDownloadStats(
             chunk_file_name=name,
@@ -85,7 +102,6 @@ class ChunkManager:
         )
 
         self._chunks_stats[chunk_range] = stats
-
         return stats
 
     def _check_stop_monitor(self) -> None:
@@ -206,33 +222,7 @@ class ChunkManager:
         )
 
         if limit:
-
-            def stop_predecessor():
-                task_a = self._chunks_tasks.get(current_range)
-                task_a_stats = self._chunks_stats.get(current_range)
-                if (
-                    task_a.task
-                    and not task_a.task.done()
-                    and task_a_stats.bytes_downloaded != task_a_stats.file_size
-                ):
-                    logger.info(
-                        "Limit reached for %s. Triggering succession to %s.",
-                        current_range,
-                        new_range,
-                    )
-                    task_a.task.cancel()
-                elif task_a_stats.bytes_downloaded == task_a_stats.file_size:
-                    logger.info(
-                        "Task %s finished after limit. It will be succession to %s.",
-                        current_range,
-                        new_range,
-                    )
-
-            if stats_a.status in (
-                EDownloadStatus.PENDING,
-                EDownloadStatus.DOWNLOADING,
-            ):
-                stats_a.add_limit_observer(limit, stop_predecessor)
+            self._setup_succession_stop(current_range, new_range, stats_a, limit)
 
         ctx_predecessor = self._chunks_tasks.get(current_range)
         init_signal = asyncio.Event()
@@ -249,6 +239,40 @@ class ChunkManager:
             ),
             init_signal=init_signal,
         )
+
+    def _setup_succession_stop(
+        self,
+        current_range: ChunkRange,
+        new_range: ChunkRange,
+        stats_a: ChunkDownloadStats,
+        limit: int,
+    ) -> None:
+        """
+        Sets up the observer to stop the predecessor task when the limit is reached.
+        """
+
+        def stop_predecessor():
+            task_a = self._chunks_tasks.get(current_range)
+            if (
+                task_a
+                and not task_a.task.done()
+                and stats_a.bytes_downloaded != stats_a.file_size
+            ):
+                logger.info(
+                    "Limit reached for %s. Triggering succession to %s.",
+                    current_range,
+                    new_range,
+                )
+                task_a.task.cancel()
+            elif stats_a.bytes_downloaded == stats_a.file_size:
+                logger.info(
+                    "Task %s finished after limit. It will be succession to %s.",
+                    current_range,
+                    new_range,
+                )
+
+        if stats_a.status in (EDownloadStatus.PENDING, EDownloadStatus.DOWNLOADING):
+            stats_a.add_limit_observer(limit, stop_predecessor)
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 
@@ -380,44 +404,17 @@ class ChunkManager:
 
     async def merge_chunks(self, cleanup: bool = True) -> str:
         """
-        Calculates the optimal coverage and merges all completed chunks into the final file.
-
-        Args:
-            cleanup: Whether to delete the temporary chunk files after merging.
-
-        Returns:
-            The key of the merged file.
+        Merges completed chunks into the final file.
         """
-        completed_stats = [
-            s
-            for s in self._chunks_stats.values()
-            if s.status == EDownloadStatus.COMPLETED
-        ]
-
-        if not completed_stats:
-            raise RuntimeError("No completed chunks to merge.")
-
-        ranges = [s.range for s in completed_stats]
-        fragments = calculate_optimal_coverage(ranges, file_size=self._cfg.file_size)
-
-        merge_configs = []
-        for frag in fragments:
-            stats = self._chunks_stats[frag.range]
-            merge_configs.append(
-                FileRangeConfig(
-                    key=stats.chunk_file_name,
-                    start_byte=0,
-                    end_byte=(
-                        (frag.read_limit_qt_bytes - 1)
-                        if frag.read_limit_qt_bytes
-                        else None
-                    ),
-                )
+        try:
+            dest_key = await reconstruct_file(
+                storage=self._storage,
+                stats_list=list(self._chunks_stats.values()),
+                final_filename=self._cfg.file_name,
+                total_file_size=self._cfg.file_size,
             )
-
-        dest_key = self._cfg.file_name
-        logger.info("Merging %d fragments into %s", len(merge_configs), dest_key)
-        await self._storage.merge_ranges(merge_configs, dest_key)
+        except ReconstructionError as e:
+            raise RuntimeError(f"Merge failed: {e}") from e
 
         if cleanup:
             logger.info("Cleaning up ChunkManager after merge...")

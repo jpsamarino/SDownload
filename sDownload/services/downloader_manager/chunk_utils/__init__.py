@@ -1,7 +1,7 @@
 from .downloader import download_chunk_supervised
 from .succession import run_chunk_succession
 from .monitor import monitor_download_progress
-from .reconstructor import reconstruct_file
+from .reconstructor import reconstruct_file, ReconstructionError
 from .cleanup import cleanup_temp_files
 
 __all__ = [
@@ -9,5 +9,6 @@ __all__ = [
     "run_chunk_succession",
     "monitor_download_progress",
     "reconstruct_file",
+    "ReconstructionError",
     "cleanup_temp_files",
 ]
