@@ -14,9 +14,7 @@ from sDownload.services.downloader_manager.download_stats_models import (
     EDownloadStatus,
 )
 from sDownload.services.downloader_manager.download_config import DownloadConfig
-from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
-    throttle_and_track_async_stream,
-)
+
 from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
     run_chunk_succession,
