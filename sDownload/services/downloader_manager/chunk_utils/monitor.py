@@ -15,33 +15,34 @@ async def monitor_download_progress(
     interval: float = 0.5,
 ) -> None:
     """
-    Periodically updates the download progress stats.
+    Periodically updates the download progress stats with a high-performance single-pass loop.
     """
     is_active = True
     try:
         while is_active:
             total_speed = 0.0
+            pending_count = 0
+            downloading_stats = []
 
-            active_stats = [
-                s
-                for s in chunks_stats.values()
-                if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
-            ]
-
-            downloading_stats = [
-                s for s in active_stats if s.status == EDownloadStatus.DOWNLOADING
-            ]
-
-            if downloading_stats:
-                for stats in downloading_stats:
+            for stats in chunks_stats.values():
+                status = stats.status
+                if status == EDownloadStatus.DOWNLOADING:
                     stats.update()
                     total_speed += stats.speed_bps
+                    downloading_stats.append(stats)
+                elif status == EDownloadStatus.PENDING:
+                    pending_count += 1
 
+            downloading_count = len(downloading_stats)
+            is_active = (downloading_count + pending_count) > 0
+
+            if downloading_count > 0:
                 logger.info(
-                    "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
+                    "(%s) SPEED: %.2f MB/s | Active: %d | Pending: %d",
                     file_name,
                     total_speed / (1024 * 1024),
-                    len(active_stats),
+                    downloading_count,
+                    pending_count,
                 )
 
                 if logger.isEnabledFor(logging.DEBUG):
@@ -53,9 +54,10 @@ async def monitor_download_progress(
                             stats.progress,
                             stats.speed_bps / (1024 * 1024),
                         )
-            elif not active_stats:
-                logger.debug("(%s) No active chunks. Stopping monitor.", file_name)
-                is_active = False
+            elif not is_active:
+                logger.debug(
+                    "(%s) No active or pending chunks. Stopping monitor.", file_name
+                )
 
             if is_active:
                 await asyncio.sleep(interval)

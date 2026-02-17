@@ -54,9 +54,10 @@ async def test_monitor_basic_loop(stats_factory):
         assert mock_logger.info.called
         # Verify it logged speed
         args, _ = mock_logger.info.call_args
-        # args[0] is the format string, args[1] is file_name, args[2] is speed, args[3] is active_count
+        # args[0] is the format string, args[1] is file_name, args[2] is speed, args[3] is downloading_count, args[4] is pending_count
         assert args[2] == 1.0  # 1.0 MB/s
         assert args[3] == 1
+        assert args[4] == 0
 
 
 @pytest.mark.asyncio
@@ -85,6 +86,7 @@ async def test_monitor_multiple_chunks(stats_factory):
         # Total should be 1.5 MB/s
         assert args[2] == 1.5
         assert args[3] == 2
+        assert args[4] == 0
 
 
 @pytest.mark.asyncio
