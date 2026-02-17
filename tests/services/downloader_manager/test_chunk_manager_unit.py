@@ -713,3 +713,69 @@ async def test_chunk_manager_monitor_stops_on_cancel_all_chunks(chunk_manager):
 
         await chunk_manager.cancel_all_chunks()
         assert chunk_manager._monitor_task is None
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_context_manager_cleanup(
+    download_config, mock_downloader, temp_storage
+):
+    """ChunkManager should cleanup automatically when used as an async context manager"""
+    async with ChunkManager(download_config, mock_downloader, temp_storage) as manager:
+        manager._cleaned_up = False  # Ensure it's not cleaned up yet
+
+    assert manager._cleaned_up is True
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_context_manager_with_error(
+    download_config, mock_downloader, temp_storage
+):
+    """ChunkManager should cleanup even if an exception occurs inside the context"""
+    try:
+        async with ChunkManager(
+            download_config, mock_downloader, temp_storage
+        ) as manager:
+            raise ValueError("Test Error")
+    except ValueError:
+        pass
+
+    assert manager._cleaned_up is True
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_del_defensive_cleanup(
+    download_config, mock_downloader, temp_storage, capsys
+):
+    """
+    If ChunkManager is deleted without cleanup(), it should:
+    1. Print an error to stderr/stdout.
+    2. Cancel internal tasks.
+    """
+    import gc
+
+    # Create manager and start a chunk to have an active task
+    manager = ChunkManager(download_config, mock_downloader, temp_storage)
+    r1 = ChunkRange(0, 100)
+    manager.start_chunk(r1)
+
+    # Capture the task
+    task = manager._chunks_tasks[r1].task
+    assert not task.done()
+
+    # Delete the manager without calling cleanup()
+    # We need to be careful with GC in tests
+    name = manager._cfg.file_name
+    del manager
+    gc.collect()  # Force garbage collection
+
+    # 1. Check if the error message was printed
+    captured = capsys.readouterr()
+    assert (
+        f"ERROR: ChunkManager for '{name}' was destroyed without calling cleanup()"
+        in captured.out
+    )
+
+    # 2. Check if the task was cancelled
+    # The cancellation is synchronous but the task needs a loop cycle to finish
+    await asyncio.sleep(0)
+    assert task.cancelled() or task.done()

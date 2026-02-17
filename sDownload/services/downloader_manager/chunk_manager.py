@@ -51,6 +51,32 @@ class ChunkManager:
         self._chunks_tasks: dict[ChunkRange, ChunkTaskContext] = {}
         self._wait_lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
+        self._cleaned_up = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if exc_type and exc_type is not asyncio.CancelledError:
+            logger.warning("ChunkManager exiting context with error: %s", exc_val)
+        await self.cleanup()
+
+    def __del__(self):
+        if not self._cleaned_up:
+            print(
+                f"\nERROR: ChunkManager for '{self._cfg.file_name}' was destroyed without calling cleanup(). "
+                f"Please use 'async with' or call await manager.cleanup() to avoid resource leaks."
+            )
+            if hasattr(self, "_chunks_tasks") and self._chunks_tasks:
+                for context in self._chunks_tasks.values():
+                    if context.task and not context.task.done():
+                        context.task.cancel()
+            if (
+                hasattr(self, "_monitor_task")
+                and self._monitor_task
+                and not self._monitor_task.done()
+            ):
+                self._monitor_task.cancel()
 
     @property
     def stats(self) -> Mapping[ChunkRange, ChunkDownloadStats]:
@@ -355,7 +381,11 @@ class ChunkManager:
         """
         Stops all active processes, deletes temporary files, and clears internal state.
         """
+        if self._cleaned_up:
+            return
+
         logger.info("Performing comprehensive cleanup of ChunkManager")
+        self._cleaned_up = True
 
         await self.cancel_all_chunks()
         await cleanup_temp_files(self._storage, self._chunks_stats.values())

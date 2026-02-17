@@ -605,3 +605,74 @@ async def test_chunk_manager_monitor_lifecycle_integration(
     assert chunk_manager._monitor_task is None
 
     await chunk_manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_context_manager_lifecycle_integration(
+    setup_downloader_and_config, storage
+):
+    """Integration: Full lifecycle using async context manager"""
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    async with ChunkManager(download_config, downloader, storage) as manager:
+        # 1. Start a few chunks
+        r1 = ChunkRange(0, 1023)
+        r2 = ChunkRange(1024, 2047)
+        manager.start_chunk(r1)
+        manager.start_chunk(r2)
+
+        await manager.wait_for_completed_chunks()
+
+    # After context exit, it should be cleaned up
+    assert manager._cleaned_up is True
+    # Files should be gone (cleanup_temp_files called)
+    # Verify files on disk are gone for those chunks
+    listed = await storage.list_data()
+    chunk_files = [f.key for f in listed if "file_100k.bin.sdownload" in f.key]
+    assert len(chunk_files) == 0
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_context_manager_external_cancel_integration(
+    setup_downloader_and_config, storage
+):
+    """Integration: Verify cleanup runs even if the outer task is cancelled"""
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    inner_manager = None
+
+    async def run_manager():
+        nonlocal inner_manager
+        async with ChunkManager(download_config, downloader, storage) as manager:
+            inner_manager = manager
+            manager.start_chunk(ChunkRange(0, 5000))
+            await asyncio.sleep(10)  # Wait for long time, to be cancelled
+
+    task = asyncio.create_task(run_manager())
+    await asyncio.sleep(0.1)  # Let it start
+
+    assert inner_manager is not None
+    assert not inner_manager._cleaned_up
+
+    # External cancel
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Cleanup MUST have run
+    assert inner_manager._cleaned_up is True
+
+    # Check if monitor and tasks are dead
+    assert inner_manager._monitor_task is None or inner_manager._monitor_task.done()
+    for ctx in inner_manager._chunks_tasks.values():
+        assert ctx.task.done() or ctx.task.cancelled()
