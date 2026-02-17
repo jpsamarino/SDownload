@@ -24,6 +24,8 @@ from sDownload.services.downloader_manager.chunk_utils import (
     download_chunk_supervised,
     reconstruct_file,
     ReconstructionError,
+    format_chunk_file_name,
+    get_effective_range_info,
 )
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
@@ -85,29 +87,6 @@ class ChunkManager:
         """
         return MappingProxyType(self._chunks_stats)
 
-    def _get_chunk_file_name(self, chunk_range: ChunkRange) -> str:
-        """
-        Returns the standardized temporary file name for a chunk.
-        """
-        return f"{chunk_range}_{self._cfg.file_name}.sdownload"
-
-    def _get_effective_range_info(
-        self, chunk_range: ChunkRange
-    ) -> tuple[int, int | None]:
-        """
-        Calculates the effective end byte and total size for a chunk range.
-        """
-        effective_end = chunk_range.end
-        if effective_end is None and self._cfg.file_size is not None:
-            effective_end = self._cfg.file_size - 1
-
-        file_size = (
-            (effective_end - chunk_range.start + 1)
-            if effective_end is not None
-            else None
-        )
-        return effective_end, file_size
-
     def _register_chunk_stats(
         self,
         chunk_range: ChunkRange,
@@ -115,13 +94,13 @@ class ChunkManager:
         status: EDownloadStatus = EDownloadStatus.PENDING,
     ) -> ChunkDownloadStats:
 
-        _, file_size = self._get_effective_range_info(chunk_range)
-        name = self._get_chunk_file_name(chunk_range)
+        _, total_bytes = get_effective_range_info(chunk_range, self._cfg.file_size)
+        chunk_file_name = format_chunk_file_name(chunk_range, self._cfg.file_name)
 
         stats = ChunkDownloadStats(
-            chunk_file_name=name,
             range=chunk_range,
-            file_size=file_size,
+            file_size=total_bytes,
+            chunk_file_name=chunk_file_name,
             status=status,
             target_speed_bps=target_speed_bps,
         )

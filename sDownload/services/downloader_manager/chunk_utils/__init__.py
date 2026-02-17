@@ -3,6 +3,7 @@ from .succession import run_chunk_succession
 from .monitor import monitor_download_progress
 from .reconstructor import reconstruct_file, ReconstructionError
 from .cleanup import cleanup_temp_files
+from .common import format_chunk_file_name, get_effective_range_info
 
 __all__ = [
     "download_chunk_supervised",
@@ -11,4 +12,6 @@ __all__ = [
     "reconstruct_file",
     "ReconstructionError",
     "cleanup_temp_files",
+    "format_chunk_file_name",
+    "get_effective_range_info",
 ]
