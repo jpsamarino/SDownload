@@ -128,8 +128,78 @@ async def test_monitor_debug_logs(stats_factory):
         await asyncio.gather(monitor_task, return_exceptions=True)
 
         assert mock_logger.debug.called
-        # Check if it logged the chunk detail
-        debug_args, _ = mock_logger.debug.call_args
-        # debug_args[0] is format, [1] is start, [2] is end, [3] is progress, [4] is speed
-        assert debug_args[1] == 0
-        assert debug_args[2] == 100
+        # Check if it logged the chunk detail in any of the debug calls
+        debug_calls = [call.args for call in mock_logger.debug.call_args_list]
+        chunk_detail_logged = any(
+            len(args) > 1 and args[1] == 0 for args in debug_calls
+        )
+        assert chunk_detail_logged
+
+
+@pytest.mark.asyncio
+async def test_monitor_auto_stop_on_completion(stats_factory):
+    """Scenario 5: Monitor should stop itself when all chunks are COMPLETED"""
+    s1 = stats_factory(0, 100, status=EDownloadStatus.DOWNLOADING)
+    chunks_stats = {s1.range: s1}
+
+    # Start monitor
+    monitor_task = asyncio.create_task(
+        monitor_download_progress(chunks_stats, "auto_stop_test", interval=0.02)
+    )
+
+    await asyncio.sleep(0.1)
+    assert not monitor_task.done()
+
+    # Mark as completed
+    s1.set_status(EDownloadStatus.COMPLETED)
+
+    # Wait for monitor to detect and stop
+    await asyncio.wait_for(monitor_task, timeout=0.1)
+    assert monitor_task.done()
+
+
+@pytest.mark.asyncio
+async def test_monitor_auto_stop_on_empty_stats():
+    """Scenario 6: Monitor should stop itself when chunks_stats is empty"""
+    chunks_stats = {}
+
+    # Start monitor
+    monitor_task = asyncio.create_task(
+        monitor_download_progress(chunks_stats, "empty_stop_test", interval=0.01)
+    )
+
+    # Should stop almost immediately
+    await asyncio.wait_for(monitor_task, timeout=0.1)
+    assert monitor_task.done()
+
+
+@pytest.mark.asyncio
+async def test_monitor_stays_alive_on_pending_only(stats_factory):
+    """Scenario 7: Monitor should stay active but NOT log when only PENDING chunks exist"""
+    s1 = stats_factory(0, 100, status=EDownloadStatus.PENDING)
+    chunks_stats = {s1.range: s1}
+
+    with patch(
+        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
+    ) as mock_logger:
+        monitor_task = asyncio.create_task(
+            monitor_download_progress(chunks_stats, "pending_test", interval=0.01)
+        )
+
+        await asyncio.sleep(0.05)
+
+        # Should still be running
+        assert not monitor_task.done()
+
+        # info should NOT be called because active_count > 0 but downloading_count == 0
+        assert not mock_logger.info.called
+
+        # Now switch to downloading
+        s1.set_status(EDownloadStatus.DOWNLOADING)
+        await asyncio.sleep(0.05)
+
+        # Now it should have logged
+        assert mock_logger.info.called
+
+        monitor_task.cancel()
+        await asyncio.gather(monitor_task, return_exceptions=True)

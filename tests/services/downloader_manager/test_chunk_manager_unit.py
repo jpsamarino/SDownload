@@ -661,3 +661,55 @@ async def test_cleanup_comprehensive(chunk_manager, temp_storage):
         assert len(chunk_manager._chunks_stats) == 0
         assert chunk_manager._monitor_task is None
         temp_storage.delete_data.assert_called_with(stats.chunk_file_name)
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_monitor_stops_on_cancel_chunk(chunk_manager):
+    """Monitor should be stopped/None when the only active chunk is cancelled"""
+
+    async def fast_mock(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
+        if init_signal:
+            init_signal.set()
+        await asyncio.sleep(5.0)
+        return stats.range
+
+    with patch(
+        "sDownload.services.downloader_manager.chunk_manager.download_chunk_supervised",
+        side_effect=fast_mock,
+    ):
+        r1 = ChunkRange(0, 10)
+        chunk_manager.start_chunk(r1)
+        await asyncio.sleep(0.01)  # let it start
+        assert chunk_manager._monitor_task is not None
+
+        await chunk_manager.cancel_chunk(r1)
+        assert chunk_manager._monitor_task is None
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_monitor_stops_on_cancel_all_chunks(chunk_manager):
+    """Monitor should be stopped/None when all chunks are cancelled via cancel_all_chunks"""
+
+    async def fast_mock(
+        downloader, storage, stats, download_url, throttler=None, init_signal=None
+    ):
+        if init_signal:
+            init_signal.set()
+        await asyncio.sleep(5.0)
+        return stats.range
+
+    with patch(
+        "sDownload.services.downloader_manager.chunk_manager.download_chunk_supervised",
+        side_effect=fast_mock,
+    ):
+        r1 = ChunkRange(0, 10)
+        r2 = ChunkRange(11, 20)
+        chunk_manager.start_chunk(r1)
+        chunk_manager.start_chunk(r2)
+        await asyncio.sleep(0.01)
+        assert chunk_manager._monitor_task is not None
+
+        await chunk_manager.cancel_all_chunks()
+        assert chunk_manager._monitor_task is None

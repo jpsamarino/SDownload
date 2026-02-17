@@ -17,21 +17,23 @@ async def monitor_download_progress(
     """
     Periodically updates the download progress stats.
     """
+    is_active = True
     try:
-        while True:
+        while is_active:
             total_speed = 0.0
-            active_count = 0
 
             active_stats = [
                 s
                 for s in chunks_stats.values()
-                if s.status == EDownloadStatus.DOWNLOADING
+                if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
             ]
-            active_count = len(active_stats)
 
-            if active_count > 0:
+            downloading_stats = [
+                s for s in active_stats if s.status == EDownloadStatus.DOWNLOADING
+            ]
 
-                for stats in active_stats:
+            if downloading_stats:
+                for stats in downloading_stats:
                     stats.update()
                     total_speed += stats.speed_bps
 
@@ -39,11 +41,11 @@ async def monitor_download_progress(
                     "(%s) SPEED: %.2f MB/s | Active Chunks: %d",
                     file_name,
                     total_speed / (1024 * 1024),
-                    active_count,
+                    len(active_stats),
                 )
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    for stats in active_stats:
+                    for stats in downloading_stats:
                         logger.debug(
                             " └──▶ Chunk [%d-%d] %.1f%% @ %.2f MB/s",
                             stats.range.start,
@@ -51,7 +53,12 @@ async def monitor_download_progress(
                             stats.progress,
                             stats.speed_bps / (1024 * 1024),
                         )
-            await asyncio.sleep(interval)
+            elif not active_stats:
+                logger.debug("(%s) No active chunks. Stopping monitor.", file_name)
+                is_active = False
+
+            if is_active:
+                await asyncio.sleep(interval)
 
     except asyncio.CancelledError:
-        pass
+        logger.debug("(%s) Monitor cancelled.", file_name)

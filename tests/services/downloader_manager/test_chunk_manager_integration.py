@@ -567,3 +567,41 @@ async def test_chunk_manager_merge_after_resize(setup_downloader_and_config, sto
     assert file_info.size_bytes == 102400
 
     await chunk_manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_monitor_lifecycle_integration(
+    setup_downloader_and_config, storage
+):
+    """Integration: Monitor should start when a chunk starts and stop when all finish"""
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    chunk_manager = ChunkManager(download_config, downloader, storage)
+
+    # 1. No monitor at start
+    assert chunk_manager._monitor_task is None
+
+    # 2. Monitor starts with first chunk
+    r1 = ChunkRange(0, 1023)
+    chunk_manager.start_chunk(r1)
+    await asyncio.sleep(0.05)  # let it start
+    assert chunk_manager._monitor_task is not None
+    assert not chunk_manager._monitor_task.done()
+
+    # 3. Monitor stops when chunk completes
+    await chunk_manager.wait_for_completed_chunks()
+
+    # Give the monitor a moment to detect completion and stop itself
+    await asyncio.sleep(0.2)
+    assert chunk_manager._monitor_task is None or chunk_manager._monitor_task.done()
+
+    # If the monitor task is still there but done, _check_stop_monitor wasn't called
+    # but the task logic should have exited. However, the requirement is that
+    # ChunkManager manages it. In wait_for_completed_chunks, _check_stop_monitor is called.
+    assert chunk_manager._monitor_task is None
+
+    await chunk_manager.cleanup()

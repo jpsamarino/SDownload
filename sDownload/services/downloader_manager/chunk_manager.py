@@ -7,7 +7,6 @@ from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
 from sDownload.interfaces.protocols.file_storage_protocol import (
     FileStorageProtocol,
-    FileRangeConfig,
 )
 from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
@@ -294,6 +293,7 @@ class ChunkManager:
                 except Exception as e:
                     logger.warning("Chunk task %s failed: %s", chunk_range, e)
                 del self._chunks_tasks[chunk_range]
+                self._check_stop_monitor()
                 return True
 
             logger.info(
