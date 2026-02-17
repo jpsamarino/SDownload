@@ -1,8 +1,11 @@
 import pytest
+import asyncio
+from unittest.mock import MagicMock
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.services.downloader_manager.chunk_utils.common import (
     format_chunk_file_name,
     get_effective_range_info,
+    create_succession_stop_callback,
 )
 
 
@@ -26,3 +29,36 @@ def test_get_effective_range_info():
     eff_end, total_bytes = get_effective_range_info(r2, 1000)
     assert eff_end == 999
     assert total_bytes == 100  # 900 to 999 inclusive
+
+
+def test_create_succession_stop_callback():
+    r1 = ChunkRange(0, 100)
+    r2 = ChunkRange(50, 150)
+    stats_a = MagicMock()
+    stats_a.bytes_downloaded = 10
+    stats_a.file_size = 101
+
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+
+    callback = create_succession_stop_callback(r1, r2, stats_a, mock_task)
+    callback()
+
+    mock_task.cancel.assert_called_once()
+
+
+def test_create_succession_stop_callback_finished():
+    """If the task already finished, it shouldn't be cancelled"""
+    r1 = ChunkRange(0, 100)
+    r2 = ChunkRange(50, 150)
+    stats_a = MagicMock()
+    stats_a.bytes_downloaded = 101
+    stats_a.file_size = 101
+
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+
+    callback = create_succession_stop_callback(r1, r2, stats_a, mock_task)
+    callback()
+
+    mock_task.cancel.assert_not_called()

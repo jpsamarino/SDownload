@@ -26,6 +26,7 @@ from sDownload.services.downloader_manager.chunk_utils import (
     ReconstructionError,
     format_chunk_file_name,
     get_effective_range_info,
+    create_succession_stop_callback,
 )
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
@@ -226,11 +227,19 @@ class ChunkManager:
         )
 
         if limit:
-            self._setup_succession_stop(current_range, new_range, stats_a, limit)
+            ctx_predecessor = self._chunks_tasks.get(current_range)
+            stop_cb = create_succession_stop_callback(
+                current_range,
+                new_range,
+                stats_a,
+                ctx_predecessor.task if ctx_predecessor else None,
+            )
+            if stats_a.status in (EDownloadStatus.PENDING, EDownloadStatus.DOWNLOADING):
+                stats_a.add_limit_observer(limit, stop_cb)
 
         ctx_predecessor = self._chunks_tasks.get(current_range)
-        init_signal = asyncio.Event()
 
+        init_signal = asyncio.Event()
         self._chunks_tasks[new_range] = ChunkTaskContext(
             task=asyncio.create_task(
                 run_chunk_succession(
@@ -243,40 +252,6 @@ class ChunkManager:
             ),
             init_signal=init_signal,
         )
-
-    def _setup_succession_stop(
-        self,
-        current_range: ChunkRange,
-        new_range: ChunkRange,
-        stats_a: ChunkDownloadStats,
-        limit: int,
-    ) -> None:
-        """
-        Sets up the observer to stop the predecessor task when the limit is reached.
-        """
-
-        def stop_predecessor():
-            task_a = self._chunks_tasks.get(current_range)
-            if (
-                task_a
-                and not task_a.task.done()
-                and stats_a.bytes_downloaded != stats_a.file_size
-            ):
-                logger.info(
-                    "Limit reached for %s. Triggering succession to %s.",
-                    current_range,
-                    new_range,
-                )
-                task_a.task.cancel()
-            elif stats_a.bytes_downloaded == stats_a.file_size:
-                logger.info(
-                    "Task %s finished after limit. It will be succession to %s.",
-                    current_range,
-                    new_range,
-                )
-
-        if stats_a.status in (EDownloadStatus.PENDING, EDownloadStatus.DOWNLOADING):
-            stats_a.add_limit_observer(limit, stop_predecessor)
 
     async def cancel_chunk(self, chunk_range: ChunkRange) -> bool:
 

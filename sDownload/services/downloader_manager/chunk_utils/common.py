@@ -1,4 +1,12 @@
+import asyncio
+import logging
+from typing import Callable
 from sDownload.interfaces.protocols.chunk_models import ChunkRange
+from sDownload.services.downloader_manager.download_stats_models import (
+    ChunkDownloadStats,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def format_chunk_file_name(chunk_range: ChunkRange, file_name: str) -> str:
@@ -28,3 +36,35 @@ def get_effective_range_info(
         total_bytes = None
 
     return effective_end, total_bytes
+
+
+def create_succession_stop_callback(
+    current_range: ChunkRange,
+    new_range: ChunkRange,
+    stats_a: ChunkDownloadStats,
+    predecessor_task: asyncio.Task | None,
+) -> Callable[[], None]:
+    """
+    Creates a callback to stop the predecessor task when a limit is reached.
+    """
+
+    def stop_predecessor():
+        if (
+            predecessor_task
+            and not predecessor_task.done()
+            and stats_a.bytes_downloaded != stats_a.file_size
+        ):
+            logger.info(
+                "Limit reached for %s. Triggering succession to %s.",
+                current_range,
+                new_range,
+            )
+            predecessor_task.cancel()
+        elif stats_a.bytes_downloaded == stats_a.file_size:
+            logger.info(
+                "Task %s finished after limit. It will be succession to %s.",
+                current_range,
+                new_range,
+            )
+
+    return stop_predecessor
