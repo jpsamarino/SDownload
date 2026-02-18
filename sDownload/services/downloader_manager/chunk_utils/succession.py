@@ -1,11 +1,7 @@
 import asyncio
 import logging
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-    EDownloadStatus,
-)
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
+from sDownload.interfaces.protocols import FileStorageProtocol
 
 logger = logging.getLogger(__name__)
 

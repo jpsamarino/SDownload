@@ -5,8 +5,8 @@ from sDownload.services.downloader_manager.chunk_utils.downloader import (
     download_chunk_supervised,
 )
 from sDownload.services.downloader_manager.throttling import get_default_throttler
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.models import (
+    ChunkRange,
     ChunkDownloadStats,
     EDownloadStatus,
 )

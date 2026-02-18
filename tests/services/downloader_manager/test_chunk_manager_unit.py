@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sDownload.services.downloader_manager.chunk_manager import (
     ChunkManager,
+    ChunkTaskContext,
+)
+from sDownload.interfaces.models import (
     ChunkRange,
     DownloadConfig,
     EDownloadStatus,
-    ChunkTaskContext,
-)
-from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
 )
 
@@ -133,7 +133,7 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
         r2 = ChunkRange(11, 20)
 
         # Init stats manually since we are bypassing start_chunk logic slightly or need it
-        from sDownload.services.downloader_manager.download_stats_models import (
+        from sDownload.interfaces.models import (
             ChunkDownloadStats,
         )
 

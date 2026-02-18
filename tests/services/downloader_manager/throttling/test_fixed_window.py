@@ -4,10 +4,10 @@ import pytest
 from sDownload.services.downloader_manager.throttling.fixed_window import (
     FixedWindowThrottler,
 )
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.models import (
     ChunkDownloadStats,
+    ChunkRange,
 )
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
 
 
 @pytest.fixture

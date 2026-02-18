@@ -1,10 +1,7 @@
 import asyncio
 import logging
 from typing import Callable
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-)
+from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats
 
 logger = logging.getLogger(__name__)
 

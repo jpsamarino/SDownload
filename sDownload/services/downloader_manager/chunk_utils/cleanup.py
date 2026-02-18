@@ -1,10 +1,8 @@
 import asyncio
 import logging
 from collections.abc import Iterable
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-)
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
+from sDownload.interfaces.models import ChunkDownloadStats
+from sDownload.interfaces.protocols import FileStorageProtocol
 
 logger = logging.getLogger(__name__)
 

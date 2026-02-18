@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 from typing import Protocol
-from .file_info_model import FileInfoModel
+from sDownload.interfaces.models import FileInfoModel
 
 
 class DownloaderProtocol(Protocol):

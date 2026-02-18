@@ -4,13 +4,13 @@ from datetime import datetime
 import logging
 import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple
-from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.interfaces.protocols.download_strategy_protocol import (
+from sDownload.interfaces.protocols import (
+    DownloaderProtocol,
+    FileStorageProtocol,
     DownloadStrategyProtocol,
 )
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.models import (
+    ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
     EDownloadStatus,

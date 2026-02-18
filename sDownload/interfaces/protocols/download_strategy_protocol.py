@@ -1,10 +1,8 @@
 from typing import Protocol, Dict, TypedDict, NamedTuple
 
-from sDownload.interfaces.protocols.chunk_models import (
+from sDownload.interfaces.models import (
     ChunkOperationPlanModel,
     ChunkRange,
-)
-from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     DownloadStats,
 )

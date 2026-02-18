@@ -1,15 +1,10 @@
-from sDownload.interfaces.protocols.chunk_models import (
+from sDownload.interfaces.models import (
     ChunkOperationPlanModel,
     ChunkRange,
-)
-from sDownload.interfaces.protocols.download_strategy_protocol import (
-    DownloadStrategyProtocol,
-)
-from sDownload.utils.range_operations import calculate_ranges
-from sDownload.services.downloader_manager.download_stats_models import (
     ChunkDownloadStats,
     DownloadStats,
 )
+from sDownload.interfaces.protocols import DownloadStrategyProtocol
 
 
 class MultiChunkDownloadStrategy(DownloadStrategyProtocol):

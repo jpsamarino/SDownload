@@ -1,7 +1,7 @@
 import pytest
-from sDownload.exceptions.downloader_errors import DownloadRequestError
+from sDownload.exceptions import DownloadRequestError
 from sDownload.http_client.httpx_downloader import HttpxDownloader
-from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
+from sDownload.interfaces.models import HttpConfigModel
 
 
 # @pytest.mark.asyncio

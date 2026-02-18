@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 
 
-class EProxyProtocol(str, Enum):
+class EProxyType(str, Enum):
     HTTP = "http"
     HTTPS = "https"
     SOCKS4 = "socks4"
@@ -12,7 +12,7 @@ class EProxyProtocol(str, Enum):
 
 @dataclass
 class SingleProxyConfigModel:
-    protocol: EProxyProtocol
+    protocol: EProxyType
     host: str
     port: int
     username: Optional[str] = None

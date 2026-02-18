@@ -1,19 +1,12 @@
 import logging
-from sDownload.interfaces.protocols.file_storage_protocol import (
-    FileStorageProtocol,
-    FileRangeConfig,
-)
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-    EDownloadStatus,
-)
+from sDownload.interfaces.protocols import FileStorageProtocol, FileRangeConfig
+from sDownload.interfaces.models import ChunkDownloadStats, EDownloadStatus
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
 logger = logging.getLogger(__name__)
 
 
-class ReconstructionError(Exception):
-    pass
+from sDownload.exceptions import ReconstructionError
 
 
 async def reconstruct_file(

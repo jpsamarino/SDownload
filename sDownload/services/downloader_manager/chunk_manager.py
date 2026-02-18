@@ -3,32 +3,30 @@ import logging
 from collections.abc import AsyncIterable, Mapping
 from types import MappingProxyType
 from typing import Literal, NamedTuple
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_storage_protocol import (
-    FileStorageProtocol,
-)
-from sDownload.services.downloader_manager.download_stats_models import (
+
+from sDownload.interfaces.models import (
+    ChunkRange,
     ChunkDownloadStats,
     EDownloadStatus,
+    DownloadConfig,
 )
-from sDownload.services.downloader_manager.download_config import DownloadConfig
-from sDownload.services.downloader_manager.throttling import (
+from sDownload.interfaces.protocols import (
+    DownloaderProtocol,
+    FileStorageProtocol,
     ThrottlerProtocol,
-    get_default_throttler,
 )
+from sDownload.exceptions import ReconstructionError
+from sDownload.services.downloader_manager.throttling import get_default_throttler
 from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
     run_chunk_succession,
     cleanup_temp_files,
     download_chunk_supervised,
     reconstruct_file,
-    ReconstructionError,
     format_chunk_file_name,
     get_effective_range_info,
     create_succession_stop_callback,
 )
-from sDownload.utils.range_operations import calculate_optimal_coverage
 
 logger = logging.getLogger(__name__)
 

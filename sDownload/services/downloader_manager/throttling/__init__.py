@@ -1,4 +1,4 @@
-from .base import ThrottlerProtocol
+from sDownload.interfaces.protocols import ThrottlerProtocol
 from .fixed_window import FixedWindowThrottler
 from .token_bucket import TokenBucketThrottler
 
@@ -15,7 +15,6 @@ def set_default_throttler(throttler: ThrottlerProtocol) -> None:
 
 
 __all__ = [
-    "ThrottlerProtocol",
     "FixedWindowThrottler",
     "TokenBucketThrottler",
     "get_default_throttler",

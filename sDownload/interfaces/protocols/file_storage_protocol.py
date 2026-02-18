@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterable
 from typing import Protocol, NamedTuple
-from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
+from sDownload.interfaces.models import FileSystemInfoModel
 
 
 class FileRangeConfig(NamedTuple):

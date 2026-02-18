@@ -1,13 +1,11 @@
 import asyncio
 import logging
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-    EDownloadStatus,
+from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
+from sDownload.interfaces.protocols import (
+    DownloaderProtocol,
+    FileStorageProtocol,
+    ThrottlerProtocol,
 )
-from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-from sDownload.services.downloader_manager.throttling.base import ThrottlerProtocol
 
 logger = logging.getLogger(__name__)
 

@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 from sDownload.services.downloader_manager.chunk_utils.monitor import (
     monitor_download_progress,
 )
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.models import (
     ChunkDownloadStats,
     EDownloadStatus,
+    ChunkRange,
 )
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
 
 
 @pytest.fixture

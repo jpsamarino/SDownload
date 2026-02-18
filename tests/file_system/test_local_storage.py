@@ -3,11 +3,11 @@ from pathlib import Path
 import asyncio
 import pytest
 from sDownload.file_system.local_storage import LocalStorage
-from sDownload.interfaces.protocols.file_storage_protocol import (
+from sDownload.interfaces.protocols import (
     FileRangeConfig,
     FileStorageProtocol,
 )
-from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
+from sDownload.interfaces.models import FileSystemInfoModel
 
 
 async def generate_chunks(data: bytes, chunk_size: int):

@@ -1,3 +1,4 @@
+from sDownload.interfaces.models import ChunkDownloadStats
 import asyncio
 import logging
 from collections.abc import AsyncIterable
@@ -7,14 +8,18 @@ from datetime import datetime, timezone
 
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_info_model import FileInfoModel
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-from sDownload.interfaces.protocols.http_config_model import HttpConfigModel
 from sDownload.services.downloader_manager.chunk_manager import ChunkManager
-from sDownload.services.downloader_manager.download_config import DownloadConfig
-from sDownload.services.downloader_manager.download_stats_models import EDownloadStatus
+from sDownload.interfaces.protocols import (
+    DownloaderProtocol,
+    FileStorageProtocol,
+)
+from sDownload.interfaces.models import (
+    ChunkRange,
+    FileInfoModel,
+    HttpConfigModel,
+    DownloadConfig,
+    EDownloadStatus,
+)
 
 
 @pytest.fixture
@@ -383,10 +388,6 @@ async def test_resize_chunk_validation_error():
 
     with pytest.raises(KeyError):
         chunk_manager.resize_chunk(ChunkRange(0, 100), ChunkRange(0, 50))
-
-    from sDownload.services.downloader_manager.download_stats_models import (
-        ChunkDownloadStats,
-    )
 
     chunk_manager._chunks_stats[ChunkRange(0, 100)] = ChunkDownloadStats(
         chunk_file_name="test.sdownload",

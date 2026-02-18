@@ -5,11 +5,11 @@ from datetime import datetime
 import aiofiles
 import aiofiles.os
 import os
-from sDownload.interfaces.protocols.file_storage_protocol import (
+from sDownload.interfaces.protocols import (
     FileRangeConfig,
     FileStorageProtocol,
 )
-from sDownload.interfaces.protocols.filesystem_info_model import FileSystemInfoModel
+from sDownload.interfaces.models import FileSystemInfoModel
 
 
 class LocalStorage(FileStorageProtocol):

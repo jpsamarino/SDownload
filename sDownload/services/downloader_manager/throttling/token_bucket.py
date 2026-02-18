@@ -2,10 +2,8 @@ import asyncio
 import time
 import logging
 from collections.abc import AsyncGenerator
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-)
-from .base import ThrottlerProtocol
+from sDownload.interfaces.models import ChunkDownloadStats
+from sDownload.interfaces.protocols import ThrottlerProtocol
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,6 @@
 from typing import Protocol, runtime_checkable
 from collections.abc import AsyncGenerator
-from sDownload.services.downloader_manager.download_stats_models import (
-    ChunkDownloadStats,
-)
+from sDownload.interfaces.models import ChunkDownloadStats
 
 
 @runtime_checkable

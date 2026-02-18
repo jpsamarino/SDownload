@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
+from sDownload.interfaces.models import ChunkRange
 from sDownload.services.downloader_manager.chunk_utils.common import (
     format_chunk_file_name,
     get_effective_range_info,

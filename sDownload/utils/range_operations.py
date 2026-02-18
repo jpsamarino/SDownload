@@ -1,7 +1,7 @@
 from collections import deque
 from typing import List, NamedTuple, Optional, Tuple
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.interfaces.protocols.file_storage_protocol import FileRangeConfig
+from sDownload.interfaces.models import ChunkRange
+from sDownload.interfaces.protocols import FileRangeConfig
 
 
 def calculate_ranges(

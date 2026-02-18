@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 from sDownload.services.downloader_manager.chunk_utils.succession import (
     run_chunk_succession,
 )
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.models import (
+    ChunkRange,
     ChunkDownloadStats,
     EDownloadStatus,
 )

@@ -4,19 +4,15 @@ from datetime import datetime
 import logging
 import time
 from typing import AsyncIterator, Dict, List, Optional, Tuple
-from sDownload.interfaces.protocols.downloader_protocol import DownloaderProtocol
-from sDownload.interfaces.protocols.file_storage_protocol import FileStorageProtocol
-from sDownload.services.downloader_manager.download_stats_models import (
+from sDownload.interfaces.protocols import DownloaderProtocol, FileStorageProtocol
+from sDownload.interfaces.models import (
     ChunkDownloadStats,
     DownloadStats,
     EDownloadStatus,
+    ChunkRange,
+    DownloadConfig,
 )
-from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
-    throttle_and_track_async_stream,
-)
-from sDownload.interfaces.protocols.chunk_models import ChunkRange
 from sDownload.services.downloader_manager.chunk_manager import ChunkManager
-from sDownload.services.downloader_manager.download_config import DownloadConfig
 
 
 class DownloadTask:
@@ -74,7 +70,7 @@ class DownloadTask:
                 stats.chunk_file_name,
                 stats.progress,
                 stats.speed_bps / (1024 * 1024),
-                stats.target_speed_bps / (1024 * 1024),
+                (stats.target_speed_bps or 0) / (1024 * 1024),
             )
             await asyncio.sleep(interval)
         stats.update()
