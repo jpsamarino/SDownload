@@ -54,6 +54,12 @@ async def run_chunk_succession(
                 f"Insufficient data: {stats_predecessor.bytes_downloaded}/{limit} bytes"
             )
 
+        if stats_predecessor.bytes_downloaded <= 0:
+            raise RuntimeError(
+                f"Predecessor {range_predecessor} provided no data for succession to {range_successor}. "
+                "Succession cannot result in a COMPLETED chunk without data."
+            )
+
         start_crop = range_successor.start - range_predecessor.start
         end_crop = (
             (range_successor.end - range_predecessor.start)
@@ -66,9 +72,9 @@ async def run_chunk_succession(
             stats_predecessor.chunk_file_name, stats_successor.chunk_file_name
         )
 
+        stats_successor.bytes_downloaded = end_crop - start_crop + 1
         stats_successor.set_status(EDownloadStatus.COMPLETED)
         stats_predecessor.set_status(EDownloadStatus.DEPRECATED)
-        stats_successor.bytes_downloaded = end_crop - start_crop + 1
 
         logger.info("Succession complete: %s is now COMPLETED.", range_successor)
         return range_successor

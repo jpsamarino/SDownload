@@ -103,6 +103,9 @@ async def test_succession_insufficient_data(mock_storage, stats_pre, stats_succ)
 @pytest.mark.asyncio
 async def test_succession_cancelled(mock_storage, stats_pre, stats_succ):
     """Scenario 4: Succession Cancellation"""
+    # Predecessor must have downloaded bytes so crop_file is attempted
+    stats_pre.bytes_downloaded = 60
+
     # Mocking wait to raise cancellation for the succession itself
     with pytest.raises(asyncio.CancelledError):
         # We need a way to trigger cancellation mid-succession.
@@ -132,6 +135,7 @@ async def test_succession_storage_error(mock_storage, stats_pre, stats_succ):
 async def test_succession_init_signal(mock_storage, stats_pre, stats_succ):
     """Scenario 6: Verify init_signal is set immediately"""
     init_signal = asyncio.Event()
+    stats_pre.bytes_downloaded = 55
 
     pre_task = asyncio.Future()
     pre_task.set_result(None)
@@ -152,3 +156,38 @@ async def test_succession_invalid_successor_state(mock_storage, stats_pre, stats
         RuntimeError, match="Successor is not in AWAITING_SUCCESSION state"
     ):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
+
+
+@pytest.mark.asyncio
+async def test_succession_predecessor_zero_bytes(mock_storage, stats_pre, stats_succ):
+    """Scenario 8: Predecessor has 0 bytes -> Raises RuntimeError"""
+    stats_pre.bytes_downloaded = 0
+    stats_pre.limit_qt_bytes = 0
+
+    pre_task = asyncio.Future()
+    pre_task.set_exception(asyncio.CancelledError())
+
+    with pytest.raises(RuntimeError, match="provided no data"):
+        await run_chunk_succession(mock_storage, stats_pre, stats_succ, pre_task)
+
+    assert stats_succ.status == EDownloadStatus.ERROR
+    # No file operations should have been called
+    mock_storage.crop_file.assert_not_called()
+    mock_storage.move_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_succession_predecessor_file_missing(mock_storage, stats_pre, stats_succ):
+    """Scenario 9: Predecessor reports bytes but file is missing -> Raises FileNotFoundError -> status ERROR"""
+    stats_pre.bytes_downloaded = 60
+    stats_pre.limit_qt_bytes = 51
+
+    mock_storage.crop_file.side_effect = FileNotFoundError("file not found")
+
+    pre_task = asyncio.Future()
+    pre_task.set_exception(asyncio.CancelledError())
+
+    with pytest.raises(FileNotFoundError):
+        await run_chunk_succession(mock_storage, stats_pre, stats_succ, pre_task)
+
+    assert stats_succ.status == EDownloadStatus.ERROR

@@ -332,7 +332,7 @@ async def test_resize_chunk_invalid_status(chunk_manager):
     # Force status to something invalid for resize (e.g. ERROR)
     chunk_manager._chunks_stats[r1].status = EDownloadStatus.ERROR
 
-    with pytest.raises(ValueError, match="not in DOWNLOADING or COMPLETED"):
+    with pytest.raises(ValueError, match="not in PENDING, DOWNLOADING or COMPLETED"):
         chunk_manager.resize_chunk(r1, r2)
 
     await chunk_manager.cancel_all_chunks()

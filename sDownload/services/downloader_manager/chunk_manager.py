@@ -210,7 +210,7 @@ class ChunkManager:
             EDownloadStatus.COMPLETED,
         ):
             raise ValueError(
-                f"Range {current_range} is not in DOWNLOADING or COMPLETED state"
+                f"Range {current_range} is not in PENDING, DOWNLOADING or COMPLETED state"
             )
 
         stats_b = self._register_chunk_stats(
@@ -224,7 +224,10 @@ class ChunkManager:
             else None
         )
 
-        if limit:
+        if limit and stats_a.status in (
+            EDownloadStatus.PENDING,
+            EDownloadStatus.DOWNLOADING,
+        ):
             ctx_predecessor = self._chunks_tasks.get(current_range)
             stop_cb = create_succession_stop_callback(
                 current_range,
@@ -232,8 +235,7 @@ class ChunkManager:
                 stats_a,
                 ctx_predecessor.task if ctx_predecessor else None,
             )
-            if stats_a.status in (EDownloadStatus.PENDING, EDownloadStatus.DOWNLOADING):
-                stats_a.add_limit_observer(limit, stop_cb)
+            stats_a.add_limit_observer(limit, stop_cb)
 
         ctx_predecessor = self._chunks_tasks.get(current_range)
 
