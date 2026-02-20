@@ -20,6 +20,7 @@ from sDownload.interfaces.models import (
 def mock_storage():
     storage = MagicMock()
     storage.list_data = AsyncMock(return_value=[])
+    storage.get_data_info = AsyncMock(return_value=None)
     storage.save_binary_data = AsyncMock()
     storage.get_binary_data = MagicMock()
     storage.delete_data = AsyncMock()
@@ -74,15 +75,22 @@ async def test_save_info_delayed_deletion(recovery_service, mock_storage):
     )
     stats3.bytes_downloaded = 50  # Small chunk
 
-    mock_storage.list_data.return_value = [
-        FileSystemInfoModel(key="c1.tmp", size_bytes=200, created_at=datetime.now()),
-        FileSystemInfoModel(
-            key="c2.tmp", size_bytes=50, created_at=datetime.now()
-        ),  # Disk says 50 -> Mismatch
-        FileSystemInfoModel(
-            key="c3.tmp", size_bytes=50, created_at=datetime.now()
-        ),  # Small
-    ]
+    def mock_get_info(key):
+        if key == "c1.tmp":
+            return FileSystemInfoModel(
+                key="c1.tmp", size_bytes=200, created_at=datetime.now()
+            )
+        if key == "c2.tmp":
+            return FileSystemInfoModel(
+                key="c2.tmp", size_bytes=50, created_at=datetime.now()
+            )
+        if key == "c3.tmp":
+            return FileSystemInfoModel(
+                key="c3.tmp", size_bytes=50, created_at=datetime.now()
+            )
+        return None
+
+    mock_storage.get_data_info.side_effect = mock_get_info
 
     # Tracker to verify order of calls
     call_order = []
@@ -137,11 +145,23 @@ async def test_save_info_with_reduction_and_filter(recovery_service, mock_storag
     stats3.bytes_downloaded = 50
 
     # Mock storage list
-    mock_storage.list_data.return_value = [
-        FileSystemInfoModel(key="c1.tmp", size_bytes=200, created_at=datetime.now()),
-        FileSystemInfoModel(key="c2.tmp", size_bytes=500, created_at=datetime.now()),
-        FileSystemInfoModel(key="c3.tmp", size_bytes=50, created_at=datetime.now()),
-    ]
+    # Mock storage info
+    def mock_get_info_reduction(key):
+        if key == "c1.tmp":
+            return FileSystemInfoModel(
+                key="c1.tmp", size_bytes=200, created_at=datetime.now()
+            )
+        if key == "c2.tmp":
+            return FileSystemInfoModel(
+                key="c2.tmp", size_bytes=500, created_at=datetime.now()
+            )
+        if key == "c3.tmp":
+            return FileSystemInfoModel(
+                key="c3.tmp", size_bytes=50, created_at=datetime.now()
+            )
+        return None
+
+    mock_storage.get_data_info.side_effect = mock_get_info_reduction
 
     # Using 100 bytes as min_chunk_size for testing
     await recovery_service.save_info(
@@ -191,14 +211,19 @@ async def test_load_info_success(recovery_service, mock_storage):
         yield json.dumps(recovery_data).encode("utf-8")
 
     mock_storage.get_binary_data.side_effect = mock_get_data
-    mock_storage.list_data.return_value = [
-        FileSystemInfoModel(
-            key=".sdown_resume_unique_id_123.json",
-            size_bytes=100,
-            created_at=datetime.now(),
-        ),
-        FileSystemInfoModel(key="c1.tmp", size_bytes=200, created_at=datetime.now()),
-    ]
+
+    def mock_get_info_success(key):
+        if key == ".sdown_resume_unique_id_123.json":
+            return FileSystemInfoModel(
+                key=key, size_bytes=100, created_at=datetime.now()
+            )
+        if key == "c1.tmp":
+            return FileSystemInfoModel(
+                key="c1.tmp", size_bytes=200, created_at=datetime.now()
+            )
+        return None
+
+    mock_storage.get_data_info.side_effect = mock_get_info_success
 
     result = await recovery_service.load_info(file_id)
 
@@ -228,16 +253,19 @@ async def test_load_info_validation_failure(recovery_service, mock_storage):
         yield json.dumps(recovery_data).encode("utf-8")
 
     mock_storage.get_binary_data.side_effect = mock_get_data
-    mock_storage.list_data.return_value = [
-        FileSystemInfoModel(
-            key=".sdown_resume_unique_id_123.json",
-            size_bytes=100,
-            created_at=datetime.now(),
-        ),
-        FileSystemInfoModel(
-            key="c1.tmp", size_bytes=100, created_at=datetime.now()
-        ),  # Truncated
-    ]
+
+    def mock_get_info_failure(key):
+        if key == ".sdown_resume_unique_id_123.json":
+            return FileSystemInfoModel(
+                key=key, size_bytes=100, created_at=datetime.now()
+            )
+        if key == "c1.tmp":
+            return FileSystemInfoModel(
+                key="c1.tmp", size_bytes=100, created_at=datetime.now()
+            )
+        return None
+
+    mock_storage.get_data_info.side_effect = mock_get_info_failure
 
     result = await recovery_service.load_info("unique_id_123")
     assert result is not None

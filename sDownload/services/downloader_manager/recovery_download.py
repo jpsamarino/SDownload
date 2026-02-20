@@ -41,12 +41,17 @@ class RecoveryDownload:
         dto_chunks: List[RecoveryChunkDTO] = []
         chunks_to_delete: List[str] = []
 
-        files_in_storage = {
-            s.key: s.size_bytes for s in await self._storage.list_data()
+        chunk_names = [s.chunk_file_name for s in stats_list]
+        infos = await asyncio.gather(
+            *(self._storage.get_data_info(name) for name in chunk_names)
+        )
+
+        info_map = {
+            name: info.size_bytes for name, info in zip(chunk_names, infos) if info
         }
 
         for stats in stats_list:
-            actual_size = files_in_storage.get(stats.chunk_file_name, 0)
+            actual_size = info_map.get(stats.chunk_file_name, 0)
 
             if actual_size != stats.bytes_downloaded:
                 logger.warning(
@@ -62,7 +67,6 @@ class RecoveryDownload:
 
             if actual_size > 0:
                 if is_finished or actual_size >= min_chunk_size:
-                    # Convert to minimal DTO for saving
                     dto_chunks.append(
                         RecoveryChunkDTO(
                             chunk_file_name=stats.chunk_file_name,
@@ -110,11 +114,9 @@ class RecoveryDownload:
 
     async def load_info(self, file_id: str) -> Optional[DownloadInfo]:
         recovery_key = self._get_recovery_key(file_id)
-        files_in_storage = {
-            s.key: s.size_bytes for s in await self._storage.list_data()
-        }
+        recovery_info = await self._storage.get_data_info(recovery_key)
 
-        if recovery_key not in files_in_storage:
+        if not recovery_info:
             logger.info("No recovery info found for file_id %s", file_id)
             return None
 
@@ -126,12 +128,21 @@ class RecoveryDownload:
             raw_data = json.loads(
                 content.decode("utf-8"), object_hook=lambda d: SimpleNamespace(**d)
             )
+            c_names = [c.chunk_file_name for c in raw_data.chunks]
+            c_infos = await asyncio.gather(
+                *(self._storage.get_data_info(name) for name in c_names)
+            )
+            info_map = {
+                name: info.size_bytes for name, info in zip(c_names, c_infos) if info
+            }
+
             valid_stats: List[ChunkDownloadStats] = []
             for c in raw_data.chunks:
                 c_name = c.chunk_file_name
                 c_bytes = c.bytes
 
-                if c_name in files_in_storage and files_in_storage[c_name] >= c_bytes:
+                actual_on_disk = info_map.get(c_name, 0)
+                if actual_on_disk >= c_bytes:
                     valid_stats.append(
                         ChunkDownloadStats(
                             chunk_file_name=c_name,
