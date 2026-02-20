@@ -76,6 +76,18 @@ class LocalStorage(FileStorageProtocol):
 
         return await asyncio.to_thread(blocking_list)
 
+    async def get_data_info(self, key: str) -> FileSystemInfoModel | None:
+        path = self.storage_dir / key
+        if not await aiofiles.os.path.exists(path):
+            return None
+
+        stat = await aiofiles.os.stat(path)
+        return FileSystemInfoModel(
+            key=key,
+            size_bytes=stat.st_size,
+            created_at=datetime.fromtimestamp(stat.st_ctime),
+        )
+
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         configs = [FileRangeConfig(key=k) for k in source_keys]
         await self.merge_ranges(configs, dest_key)

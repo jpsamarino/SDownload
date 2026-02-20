@@ -474,3 +474,27 @@ async def test_merge_ranges_invalid_range_raises_error(storage: LocalStorage):
     ]
     with pytest.raises(ValueError, match="Invalid range"):
         await storage.merge_ranges(configs, "error.bin")
+
+
+@pytest.mark.asyncio
+async def test_get_data_info_success(storage: LocalStorage, tmp_path: Path):
+    key = "info.bin"
+    data = b"metadata test content"
+    await storage.save_binary_data(key, generate_chunks(data, 4))
+
+    info = await storage.get_data_info(key)
+
+    assert info is not None
+    assert info.key == key
+    assert info.size_bytes == len(data)
+    assert isinstance(info.created_at, datetime)
+
+    # Cross-verify with actual filesystem
+    stat = (tmp_path / key).stat()
+    assert info.size_bytes == stat.st_size
+
+
+@pytest.mark.asyncio
+async def test_get_data_info_not_found(storage: LocalStorage):
+    info = await storage.get_data_info("missing_file.bin")
+    assert info is None
