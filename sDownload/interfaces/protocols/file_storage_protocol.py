@@ -47,6 +47,15 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
+    async def get_data_info(self, key: str) -> FileSystemInfoModel | None:
+        """
+        Get info for a specific item in the storage without listing everything.
+
+        :param key: Unique identifier of the data.
+        :return: FileInfoModel if found, else None.
+        """
+        ...
+
     async def move_data(self, source_key: str, dest_key: str) -> None:
         """
         Move or rename data from source_key to dest_key.
