@@ -204,7 +204,7 @@ async def test_load_info_success(recovery_service, mock_storage):
         "file_id": file_id,
         "file_size": 1000,
         "chunks": [{"chunk_file_name": "c1.tmp", "start": 0, "end": 199, "bytes": 200}],
-        "updated_at": datetime.now().timestamp(),
+        "updated_at": "2026-02-21T00:00:00Z",
     }
 
     async def mock_get_data(key):
@@ -229,6 +229,7 @@ async def test_load_info_success(recovery_service, mock_storage):
 
     assert result is not None
     assert result.file_id == file_id
+    assert isinstance(result.updated_at, datetime)
     assert len(result.chunks_finished) == 1
     stats = result.chunks_finished[0]
     assert isinstance(stats, ChunkDownloadStats)
@@ -246,7 +247,7 @@ async def test_load_info_validation_failure(recovery_service, mock_storage):
         "file_id": file_id,
         "file_size": 1000,
         "chunks": [{"chunk_file_name": "c1.tmp", "start": 0, "end": 199, "bytes": 200}],
-        "updated_at": datetime.now().timestamp(),
+        "updated_at": "2026-02-21T10:00:00Z",
     }
 
     async def mock_get_data(key):

@@ -2,9 +2,11 @@ import json
 import logging
 import asyncio
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import List, Optional
+
+from sDownload.utils import json_dumps, parse_json_date
 
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
@@ -86,10 +88,10 @@ class RecoveryDownload:
             file_id=file_id,
             file_size=total_file_size,
             chunks=dto_chunks,
-            updated_at=datetime.now().timestamp(),
+            updated_at=datetime.now(timezone.utc),
         )
 
-        data_json = json.dumps(asdict(state_dto), indent=4)
+        data_json = json_dumps(asdict(state_dto), indent=4)
 
         async def json_stream():
             yield data_json.encode("utf-8")
@@ -162,7 +164,7 @@ class RecoveryDownload:
                 file_id=raw_data.file_id,
                 file_size=raw_data.file_size,
                 chunks_finished=valid_stats,
-                updated_at=raw_data.updated_at,
+                updated_at=parse_json_date(raw_data.updated_at),
             )
 
         except Exception as e:

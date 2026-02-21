@@ -98,6 +98,7 @@ async def test_recovery_flow_full_integration(
     loaded_info = await recovery_service.load_info(file_id)
     assert loaded_info is not None
     assert loaded_info.file_id == file_id
+    assert isinstance(loaded_info.updated_at, datetime)
     assert len(loaded_info.chunks_finished) == 2
 
     c1 = loaded_info.chunks_finished[0]
