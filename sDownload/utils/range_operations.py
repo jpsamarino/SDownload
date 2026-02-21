@@ -1,12 +1,10 @@
 from collections import deque
-from typing import List, NamedTuple, Optional, Tuple
-from sDownload.interfaces.models import ChunkRange
-from sDownload.interfaces.protocols import FileRangeConfig
+from sDownload.interfaces.models import ChunkRange, ChunkFragment
 
 
 def calculate_ranges(
-    file_size: int, num_parts: int, cache: List[ChunkRange] | None = None
-) -> List[ChunkRange]:
+    file_size: int, num_parts: int, cache: list[ChunkRange] | None = None
+) -> list[ChunkRange]:
     """
     Calculates download ranges including cached parts and filling gaps.
 
@@ -69,13 +67,8 @@ def calculate_ranges(
     return final_ranges
 
 
-class ChunkFragment(NamedTuple):
-    range: ChunkRange
-    read_limit_qt_bytes: Optional[int]
-
-
 def calculate_optimal_coverage(
-    chunks: list[ChunkRange], file_size: Optional[int] = None
+    chunks: list[ChunkRange], file_size: int | None = None
 ) -> list[ChunkFragment]:
     """
     Finds the minimum number of chunks needed to cover a file range [0, file_size).
