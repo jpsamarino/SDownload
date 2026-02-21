@@ -1,5 +1,5 @@
 import pytest
-from sDownload.utils.range_operations import calculate_optimal_coverage, ChunkFragment
+from sDownload.utils import calculate_optimal_coverage, ChunkFragment
 from sDownload.interfaces.models import ChunkRange
 
 

@@ -1,7 +1,7 @@
 import logging
 from sDownload.interfaces.protocols import FileStorageProtocol, FileRangeConfig
 from sDownload.interfaces.models import ChunkDownloadStats, EDownloadStatus
-from sDownload.utils.range_operations import calculate_optimal_coverage
+from sDownload.utils import calculate_optimal_coverage
 
 logger = logging.getLogger(__name__)
 

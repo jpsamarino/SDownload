@@ -1,5 +1,5 @@
 from sDownload.interfaces.models import ChunkRange
-from sDownload.utils.range_operations import calculate_ranges
+from sDownload.utils import calculate_ranges
 
 
 def test_no_cache():

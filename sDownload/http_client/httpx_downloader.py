@@ -10,7 +10,7 @@ from sDownload.exceptions import (
 )
 from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, FileInfoModel
-from sDownload.utils.url_to_file_name import url_to_file_name
+from sDownload.utils import url_to_file_name
 
 
 class HttpxDownloader(DownloaderProtocol):
