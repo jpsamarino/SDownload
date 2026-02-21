@@ -1,4 +1,4 @@
-from .chunk_models import ChunkRange, ChunkOperationPlanModel
+from .chunk_models import ChunkRange, ChunkOperationPlanModel, ChunkFragment
 from .file_info_model import FileInfoModel
 from .filesystem_info_model import FileSystemInfoModel
 from .http_config_model import HttpConfigModel
@@ -10,6 +10,7 @@ from .recovery_models import RecoveryChunkDTO, RecoveryStateDTO, DownloadInfo
 __all__ = [
     "ChunkRange",
     "ChunkOperationPlanModel",
+    "ChunkFragment",
     "FileInfoModel",
     "FileSystemInfoModel",
     "HttpConfigModel",

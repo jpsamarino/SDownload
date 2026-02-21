@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List
 from .stats_models import ChunkDownloadStats
 
@@ -20,7 +21,7 @@ class RecoveryStateDTO:
     file_id: str
     file_size: int
     chunks: List[RecoveryChunkDTO]
-    updated_at: float
+    updated_at: datetime
 
 
 @dataclass
@@ -30,4 +31,4 @@ class DownloadInfo:
     file_id: str
     file_size: int
     chunks_finished: List[ChunkDownloadStats]
-    updated_at: float
+    updated_at: datetime

@@ -66,3 +66,13 @@ class ChunkRange(NamedTuple):
 class ChunkOperationPlanModel(TypedDict):
     chunks_to_start: list[ChunkRange] | None
     chunks_to_stop: list[ChunkRange] | None
+
+
+class ChunkFragment(NamedTuple):
+    """
+    Represents a specific fragment of a chunk that should be read.
+    Used when multiple chunks overlap and we need to pick specific parts.
+    """
+
+    range: ChunkRange
+    read_limit_qt_bytes: int | None
