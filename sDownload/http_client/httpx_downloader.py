@@ -9,7 +9,7 @@ from sDownload.exceptions import (
     FileInfoExtractionError,
 )
 from sDownload.interfaces.protocols import DownloaderProtocol
-from sDownload.interfaces.models import HttpConfigModel, FileInfoModel
+from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 
 
@@ -92,7 +92,7 @@ class HttpxDownloader(DownloaderProtocol):
             except FileIDMismatchError:
                 raise
 
-    async def get_file_info(self, url: str) -> list[FileInfoModel]:
+    async def get_file_info(self, url: str) -> list[ResourceInfo]:
         try:
             async with await self._get_client() as client:
                 async with client.stream(
@@ -141,7 +141,7 @@ class HttpxDownloader(DownloaderProtocol):
                         ) from date_err
 
                     return [
-                        FileInfoModel(
+                        ResourceInfo(
                             file_name=file_name,
                             file_dir=".",
                             file_size=full_size,

@@ -42,7 +42,7 @@ class FileStorageProtocol(Protocol):
         """
         List all stored data in the storage.
 
-        :return: An awaitable that yields a list of FileInfoModel objects
+        :return: An awaitable that yields a list of StoredFileInfo objects
         {key, sizeBytes, created_at}.
         """
         ...
@@ -52,7 +52,7 @@ class FileStorageProtocol(Protocol):
         Get info for a specific item in the storage without listing everything.
 
         :param key: Unique identifier of the data.
-        :return: FileInfoModel if found, else None.
+        :return: StoredFileInfo if found, else None.
         """
         ...
 

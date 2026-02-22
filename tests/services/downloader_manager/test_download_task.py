@@ -11,7 +11,7 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import (
-    FileInfoModel,
+    ResourceInfo,
     HttpConfigModel,
     DownloadConfig,
     DLManagerConfig,  # to check if needed, but the original used DownloadConfig from two places
@@ -43,7 +43,7 @@ class DummyDownloader(DownloaderProtocol):
 
     async def get_file_info(self, url: str) -> list:
         return [
-            FileInfoModel(
+            ResourceInfo(
                 file_name="test.bin",
                 file_dir=None,
                 file_size=12,

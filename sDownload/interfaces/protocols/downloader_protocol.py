@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 from typing import Protocol
-from sDownload.interfaces.models import FileInfoModel
+from sDownload.interfaces.models import ResourceInfo
 
 
 class DownloaderProtocol(Protocol):
@@ -35,7 +35,7 @@ class DownloaderProtocol(Protocol):
         """
         ...
 
-    async def get_file_info(self, url: str) -> list[FileInfoModel]:
+    async def get_file_info(self, url: str) -> list[ResourceInfo]:
         """
         Retrieve metadata information about a file from a specified URL.
 
@@ -46,7 +46,7 @@ class DownloaderProtocol(Protocol):
             url (str): The URL from which to fetch the file's metadata.
 
         Returns:
-            FileInfoModel: A `FileInfoModel` instance containing the file's metadata
+            ResourceInfo: A `ResourceInfo` instance containing the file's metadata
             (name, size, content type, etc.).
 
         Raises:

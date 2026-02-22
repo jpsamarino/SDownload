@@ -15,7 +15,7 @@ from sDownload.interfaces.protocols import (
 )
 from sDownload.interfaces.models import (
     ChunkRange,
-    FileInfoModel,
+    ResourceInfo,
     HttpConfigModel,
     DownloadConfig,
     EDownloadStatus,

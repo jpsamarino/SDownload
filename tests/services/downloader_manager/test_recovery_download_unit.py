@@ -8,7 +8,7 @@ from sDownload.services.downloader_manager.recovery_download import (
     DownloadInfo,
 )
 from sDownload.interfaces.models import (
-    FileInfoModel,
+    ResourceInfo,
     ChunkDownloadStats,
     ChunkRange,
     StoredFileInfo,
@@ -34,7 +34,7 @@ def recovery_service(mock_storage):
 
 @pytest.fixture
 def sample_file_info():
-    return FileInfoModel(
+    return ResourceInfo(
         file_name="test.zip",
         file_dir="/tmp",
         file_size=1000,
