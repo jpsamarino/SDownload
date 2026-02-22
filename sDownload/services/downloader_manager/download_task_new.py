@@ -185,16 +185,16 @@ class DownloadTask:
             operation_actions = self._downloader_strategy.on_update(
                 self._download_stats, self._chunks_stats
             )
-            if operation_actions["chunks_to_start"]:
-                for range in operation_actions["chunks_to_start"]:
+            if operation_actions["start"]:
+                for range in operation_actions["start"]:
                     self._chunks_tasks[self._key(range.start, range.end)] = (
                         asyncio.create_task(
                             self._download_chunk(range.start, range.end)
                         )
                     )
 
-            if operation_actions["chunks_to_stop"]:
-                for range in operation_actions["chunks_to_stop"]:
+            if operation_actions["cancel"]:
+                for range in operation_actions["cancel"]:
                     self._chunks_tasks[self._key(range.start, range.end)].cancel()
                     try:
                         await self._chunks_tasks[self._key(range.start, range.end)]
@@ -255,7 +255,7 @@ class DownloadTask:
         operation_actions = self._downloader_strategy.on_start(
             self._download_stats, self._chunks_stats
         )
-        for range in operation_actions["chunks_to_start"]:
+        for range in operation_actions["start"]:
             self._chunks_tasks[self._key(range.start, range.end)] = asyncio.create_task(
                 self._download_chunk(range.start, range.end)
             )

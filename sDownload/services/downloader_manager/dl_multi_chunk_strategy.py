@@ -1,10 +1,11 @@
 from sDownload.interfaces.models import (
-    ChunkOperationPlanModel,
+    ChunkPlan,
     ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
 )
 from sDownload.interfaces.protocols import DownloadStrategyProtocol
+from sDownload.utils import calculate_ranges
 
 
 class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
@@ -35,17 +36,17 @@ class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
 
     def on_start(
         self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationPlanModel:
+    ) -> ChunkPlan:
         if chunks_stats:
-            return {"chunks_to_start": None, "chunks_to_stop": None}
+            return {"start": None, "cancel": None, "resize": None}
 
         ranges = self._calc_initial_ranges(dl_stats.file_size)
-        return {"chunks_to_start": ranges, "chunks_to_stop": None}
+        return {"start": ranges, "cancel": None, "resize": None}
 
     def on_update(
         self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationPlanModel:
-        return {"chunks_to_start": None, "chunks_to_stop": None}
+    ) -> ChunkPlan:
+        return {"start": None, "cancel": None, "resize": None}
 
     def on_end(
         self, dl_stats: DownloadStats, chunks_stats: dict[str, ChunkDownloadStats]

@@ -63,9 +63,15 @@ class ChunkRange(NamedTuple):
         return False
 
 
-class ChunkOperationPlanModel(TypedDict):
-    chunks_to_start: list[ChunkRange] | None
-    chunks_to_stop: list[ChunkRange] | None
+class ChunkResizeParams(NamedTuple):
+    old_range: ChunkRange
+    new_range: ChunkRange
+
+
+class ChunkPlan(TypedDict):
+    start: list[ChunkRange] | None
+    cancel: list[ChunkRange] | None
+    resize: list[ChunkResizeParams] | None
 
 
 class ChunkFragment(NamedTuple):

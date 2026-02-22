@@ -1,7 +1,7 @@
 from typing import Protocol, Dict, TypedDict, NamedTuple
 
 from sDownload.interfaces.models import (
-    ChunkOperationPlanModel,
+    ChunkPlan,
     ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
@@ -25,13 +25,13 @@ class DownloadStrategyProtocol(Protocol):
 
     def on_start(
         self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationPlanModel:
+    ) -> ChunkPlan:
         """Return actions that should start new chunk downloads."""
         ...
 
     def on_update(
         self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkOperationPlanModel:
+    ) -> ChunkPlan:
         """Return actions that should update currently running downloads."""
         ...
 
