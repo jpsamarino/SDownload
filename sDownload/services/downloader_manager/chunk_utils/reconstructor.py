@@ -1,5 +1,5 @@
 import logging
-from sDownload.interfaces.protocols import FileStorageProtocol, FileRangeConfig
+from sDownload.interfaces.protocols import FileStorageProtocol, FileRangeParams
 from sDownload.interfaces.models import ChunkDownloadStats, EDownloadStatus
 from sDownload.utils import calculate_optimal_coverage
 
@@ -43,7 +43,7 @@ async def reconstruct_file(
         end_byte = (frag.read_limit_qt_bytes - 1) if frag.read_limit_qt_bytes else None
 
         merge_configs.append(
-            FileRangeConfig(
+            FileRangeParams(
                 key=stats.chunk_file_name,
                 start_byte=0,
                 end_byte=end_byte,

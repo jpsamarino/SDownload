@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.interfaces.protocols import (
-    FileRangeConfig,
+    FileRangeParams,
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import FileSystemInfoModel
@@ -412,8 +412,8 @@ async def test_merge_ranges_basic(storage: LocalStorage):
     await storage.save_binary_data("p2.bin", generate_chunks(b"4567", 2))
 
     configs = [
-        FileRangeConfig(key="p1.bin", start_byte=0, end_byte=3),
-        FileRangeConfig(key="p2.bin", start_byte=0, end_byte=3),
+        FileRangeParams(key="p1.bin", start_byte=0, end_byte=3),
+        FileRangeParams(key="p2.bin", start_byte=0, end_byte=3),
     ]
     await storage.merge_ranges(configs, "merged.bin")
 
@@ -437,8 +437,8 @@ async def test_merge_ranges_with_offsets(storage: LocalStorage):
     # Byte 6 of "fghijklmnop" is 'l'
     # Bytes 6-10 of B are "lmnop"
     configs = [
-        FileRangeConfig(key="a.bin", start_byte=0, end_byte=10),
-        FileRangeConfig(key="b.bin", start_byte=6, end_byte=10),
+        FileRangeParams(key="a.bin", start_byte=0, end_byte=10),
+        FileRangeParams(key="b.bin", start_byte=6, end_byte=10),
     ]
     await storage.merge_ranges(configs, "smart_merged.bin")
 
@@ -454,8 +454,8 @@ async def test_merge_ranges_optional_params(storage: LocalStorage):
     await storage.save_binary_data("p2.bin", generate_chunks(b"abcdefghij", 4))
 
     configs = [
-        FileRangeConfig(key="p1.bin", end_byte=4),  # 0 to 4 -> "01234"
-        FileRangeConfig(key="p2.bin", start_byte=5),  # 5 to end -> "fghij"
+        FileRangeParams(key="p1.bin", end_byte=4),  # 0 to 4 -> "01234"
+        FileRangeParams(key="p2.bin", start_byte=5),  # 5 to end -> "fghij"
     ]
     await storage.merge_ranges(configs, "optional.bin")
 
@@ -470,7 +470,7 @@ async def test_merge_ranges_invalid_range_raises_error(storage: LocalStorage):
     await storage.save_binary_data("p1.bin", generate_chunks(b"012345", 2))
 
     configs = [
-        FileRangeConfig(key="p1.bin", start_byte=5, end_byte=2),
+        FileRangeParams(key="p1.bin", start_byte=5, end_byte=2),
     ]
     with pytest.raises(ValueError, match="Invalid range"):
         await storage.merge_ranges(configs, "error.bin")

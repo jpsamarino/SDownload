@@ -3,7 +3,7 @@ from typing import Protocol, NamedTuple
 from sDownload.interfaces.models import FileSystemInfoModel
 
 
-class FileRangeConfig(NamedTuple):
+class FileRangeParams(NamedTuple):
     key: str
     start_byte: int | None = None
     end_byte: int | None = None
@@ -79,12 +79,12 @@ class FileStorageProtocol(Protocol):
         ...
 
     async def merge_ranges(
-        self, source_configs: list[FileRangeConfig], dest_key: str
+        self, source_configs: list[FileRangeParams], dest_key: str
     ) -> None:
         """
         Merge specific ranges of multiple files into a single destination file.
 
-        :param source_configs: List of FileRangeConfig specifying which parts of which files to merge.
+        :param source_configs: List of FileRangeParams specifying which parts of which files to merge.
         :param dest_key: Key of the destination file.
         """
         ...

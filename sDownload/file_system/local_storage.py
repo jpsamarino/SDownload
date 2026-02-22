@@ -6,7 +6,7 @@ import aiofiles
 import aiofiles.os
 import os
 from sDownload.interfaces.protocols import (
-    FileRangeConfig,
+    FileRangeParams,
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import FileSystemInfoModel
@@ -89,11 +89,11 @@ class LocalStorage(FileStorageProtocol):
         )
 
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
-        configs = [FileRangeConfig(key=k) for k in source_keys]
+        configs = [FileRangeParams(key=k) for k in source_keys]
         await self.merge_ranges(configs, dest_key)
 
     async def merge_ranges(
-        self, source_configs: list[FileRangeConfig], dest_key: str
+        self, source_configs: list[FileRangeParams], dest_key: str
     ) -> None:
         dest_path = self.storage_dir / dest_key
         operation_buffer_size = self.io_buffer_size
