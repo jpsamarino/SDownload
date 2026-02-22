@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterable
 from typing import Protocol, NamedTuple
-from sDownload.interfaces.models import FileSystemInfoModel
+from sDownload.interfaces.models import StoredFileInfo
 
 
 class FileRangeParams(NamedTuple):
@@ -38,7 +38,7 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
-    async def list_data(self) -> list[FileSystemInfoModel]:
+    async def list_data(self) -> list[StoredFileInfo]:
         """
         List all stored data in the storage.
 
@@ -47,7 +47,7 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
-    async def get_data_info(self, key: str) -> FileSystemInfoModel | None:
+    async def get_data_info(self, key: str) -> StoredFileInfo | None:
         """
         Get info for a specific item in the storage without listing everything.
 

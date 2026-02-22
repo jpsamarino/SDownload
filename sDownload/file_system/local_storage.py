@@ -9,7 +9,7 @@ from sDownload.interfaces.protocols import (
     FileRangeParams,
     FileStorageProtocol,
 )
-from sDownload.interfaces.models import FileSystemInfoModel
+from sDownload.interfaces.models import StoredFileInfo
 
 
 class LocalStorage(FileStorageProtocol):
@@ -59,14 +59,14 @@ class LocalStorage(FileStorageProtocol):
                 f"Delete operation failed: {key} not found at {path}"
             ) from e
 
-    async def list_data(self) -> list[FileSystemInfoModel]:
+    async def list_data(self) -> list[StoredFileInfo]:
         def blocking_list():
-            files: list[FileSystemInfoModel] = []
+            files: list[StoredFileInfo] = []
             for path in self.storage_dir.iterdir():
                 if not path.is_file():
                     continue
                 stat = path.stat()
-                info = FileSystemInfoModel(
+                info = StoredFileInfo(
                     key=path.name,
                     size_bytes=stat.st_size,
                     created_at=datetime.fromtimestamp(stat.st_ctime),
@@ -76,13 +76,13 @@ class LocalStorage(FileStorageProtocol):
 
         return await asyncio.to_thread(blocking_list)
 
-    async def get_data_info(self, key: str) -> FileSystemInfoModel | None:
+    async def get_data_info(self, key: str) -> StoredFileInfo | None:
         path = self.storage_dir / key
         if not await aiofiles.os.path.exists(path):
             return None
 
         stat = await aiofiles.os.stat(path)
-        return FileSystemInfoModel(
+        return StoredFileInfo(
             key=key,
             size_bytes=stat.st_size,
             created_at=datetime.fromtimestamp(stat.st_ctime),

@@ -1,6 +1,6 @@
 from .chunk_models import ChunkRange, ChunkOperationPlanModel, ChunkFragment
 from .file_info_model import FileInfoModel
-from .filesystem_info_model import FileSystemInfoModel
+from .filesystem_info_model import StoredFileInfo
 from .http_config_model import HttpConfigModel
 from .proxy_models import ProxyConfigModel, EProxyType
 from .stats_models import ChunkDownloadStats, EDownloadStatus, DownloadStats
@@ -12,7 +12,7 @@ __all__ = [
     "ChunkOperationPlanModel",
     "ChunkFragment",
     "FileInfoModel",
-    "FileSystemInfoModel",
+    "StoredFileInfo",
     "HttpConfigModel",
     "ProxyConfigModel",
     "EProxyType",

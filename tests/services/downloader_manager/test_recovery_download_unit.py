@@ -11,7 +11,7 @@ from sDownload.interfaces.models import (
     FileInfoModel,
     ChunkDownloadStats,
     ChunkRange,
-    FileSystemInfoModel,
+    StoredFileInfo,
     EDownloadStatus,
 )
 
@@ -77,15 +77,15 @@ async def test_save_info_delayed_deletion(recovery_service, mock_storage):
 
     def mock_get_info(key):
         if key == "c1.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c1.tmp", size_bytes=200, created_at=datetime.now()
             )
         if key == "c2.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c2.tmp", size_bytes=50, created_at=datetime.now()
             )
         if key == "c3.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c3.tmp", size_bytes=50, created_at=datetime.now()
             )
         return None
@@ -148,15 +148,15 @@ async def test_save_info_with_reduction_and_filter(recovery_service, mock_storag
     # Mock storage info
     def mock_get_info_reduction(key):
         if key == "c1.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c1.tmp", size_bytes=200, created_at=datetime.now()
             )
         if key == "c2.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c2.tmp", size_bytes=500, created_at=datetime.now()
             )
         if key == "c3.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c3.tmp", size_bytes=50, created_at=datetime.now()
             )
         return None
@@ -214,11 +214,9 @@ async def test_load_info_success(recovery_service, mock_storage):
 
     def mock_get_info_success(key):
         if key == ".sdown_resume_unique_id_123.json":
-            return FileSystemInfoModel(
-                key=key, size_bytes=100, created_at=datetime.now()
-            )
+            return StoredFileInfo(key=key, size_bytes=100, created_at=datetime.now())
         if key == "c1.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c1.tmp", size_bytes=200, created_at=datetime.now()
             )
         return None
@@ -257,11 +255,9 @@ async def test_load_info_validation_failure(recovery_service, mock_storage):
 
     def mock_get_info_failure(key):
         if key == ".sdown_resume_unique_id_123.json":
-            return FileSystemInfoModel(
-                key=key, size_bytes=100, created_at=datetime.now()
-            )
+            return StoredFileInfo(key=key, size_bytes=100, created_at=datetime.now())
         if key == "c1.tmp":
-            return FileSystemInfoModel(
+            return StoredFileInfo(
                 key="c1.tmp", size_bytes=100, created_at=datetime.now()
             )
         return None

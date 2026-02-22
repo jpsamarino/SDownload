@@ -7,7 +7,7 @@ from sDownload.interfaces.protocols import (
     FileRangeParams,
     FileStorageProtocol,
 )
-from sDownload.interfaces.models import FileSystemInfoModel
+from sDownload.interfaces.models import StoredFileInfo
 
 
 async def generate_chunks(data: bytes, chunk_size: int):
@@ -67,7 +67,7 @@ async def test_list_data(storage: FileStorageProtocol, tmp_path: Path):
     assert keys == {"a.bin", "b.bin"}
 
     for info in infos:
-        assert isinstance(info, FileSystemInfoModel)
+        assert isinstance(info, StoredFileInfo)
         expected_size = content1 if info.key == "a.bin" else content2
         assert info.size_bytes == len(expected_size)
         assert isinstance(info.created_at, datetime)

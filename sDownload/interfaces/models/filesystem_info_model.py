@@ -3,7 +3,7 @@ from datetime import datetime
 
 
 @dataclass
-class FileSystemInfoModel():
+class StoredFileInfo:
     key: str
     size_bytes: int
     created_at: datetime
