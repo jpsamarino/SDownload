@@ -1,6 +1,6 @@
 import pytest
-from sDownload.utils import calculate_optimal_coverage, ChunkFragment
-from sDownload.interfaces.models import ChunkRange
+from sDownload.utils import calculate_optimal_coverage
+from sDownload.interfaces.models import ChunkRange, ChunkFragment
 
 
 def test_resolve_perfect_sequential_no_overlaps():
