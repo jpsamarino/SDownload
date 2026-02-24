@@ -779,3 +779,27 @@ async def test_chunk_manager_del_defensive_cleanup(
     # The cancellation is synchronous but the task needs a loop cycle to finish
     await asyncio.sleep(0)
     assert task.cancelled() or task.done()
+
+
+@pytest.mark.asyncio
+async def test_init_with_recovered_stats(
+    download_config, mock_downloader, temp_storage
+):
+    r1 = ChunkRange(0, 1000)
+    recovered = [
+        ChunkDownloadStats(
+            chunk_file_name="recovered.sdownload",
+            range=r1,
+            file_size=1001,
+            bytes_downloaded=1001,
+            status=EDownloadStatus.COMPLETED,
+        )
+    ]
+
+    manager = ChunkManager(
+        download_config, mock_downloader, temp_storage, recovered_stats=recovered
+    )
+
+    assert r1 in manager.stats
+    assert manager.stats[r1].status == EDownloadStatus.COMPLETED
+    assert manager.get_downloaded_bytes() == 1001

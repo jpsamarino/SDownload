@@ -59,6 +59,61 @@ def setup_downloader_and_config(nginx_custom):
     return _setup
 
 
+# # https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/cnpj.tar.gz
+# @pytest.mark.asyncio
+# async def test_chunk_real_file(storage):
+
+#     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
+#     downloader = HttpxDownloader(config)
+#     result_list = await downloader.get_file_info(
+#         f"https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/cnpj.tar.gz"
+#     )
+#     result = result_list[0]
+
+#     config = DownloadConfig(
+#         file_name=result.file_name,
+#         file_dir=result.file_dir,  # remove
+#         file_size=result.file_size,
+#         file_id=result.file_id,
+#         download_url=result.download_url,
+#         file_created_at=datetime.utcnow(),
+#         protocol_data=None,
+#         max_connections_per_download=10,
+#         max_speed_bytes_per_second=1024 * 1024 * 100,
+#     )
+
+#     download_config = config
+#     downloader = downloader
+
+#     logging.basicConfig(
+#         level=logging.DEBUG,  # ativa logs de DEBUG
+#         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+#     )
+#     # assert result.file_name == "cnpj.tar.gz"
+
+#     chunk_manager = ChunkManager(download_config, downloader, storage)
+#     giga = 1024**3
+
+#     # Start chunks
+#     chunk_manager.start_chunk(ChunkRange(0, giga * 5))
+#     chunk_manager.start_chunk(ChunkRange(giga * 5 + 1, giga * 10))
+#     chunk_manager.start_chunk(ChunkRange(giga * 10 + 1, giga * 15))
+#     chunk_manager.start_chunk(ChunkRange(giga * 15 + 1, giga * 20))
+#     chunk_manager.start_chunk(ChunkRange(giga * 20 + 1, giga * 25))
+#     chunk_manager.start_chunk(ChunkRange(giga * 25 + 1, giga * 30))
+#     chunk_manager.start_chunk(ChunkRange(giga * 30 + 1, None))
+
+#     # Wait for completion
+#     await chunk_manager.wait_for_completed_chunks()
+
+#     # Verify downloaded bytes
+#     total_downloaded = chunk_manager.get_downloaded_bytes()
+#     assert total_downloaded == download_config.file_size
+
+#     # Cleanup
+#     await chunk_manager.cleanup()
+
+
 @pytest.mark.asyncio
 async def test_chunk_manager_with_nginx(setup_downloader_and_config, storage):
     setup = await setup_downloader_and_config(
@@ -628,13 +683,16 @@ async def test_chunk_manager_context_manager_lifecycle_integration(
 
         await manager.wait_for_completed_chunks()
 
-    # After context exit, it should be cleaned up
+    # After context exit, it should be cleaned up (network tasks stopped)
     assert manager._cleaned_up is True
-    # Files should be gone (cleanup_temp_files called)
-    # Verify files on disk are gone for those chunks
+    # Files should BE PRESERVED on normal context exit
     listed = await storage.list_data()
     chunk_files = [f.key for f in listed if "file_100k.bin.sdownload" in f.key]
-    assert len(chunk_files) == 0
+    assert len(chunk_files) > 0
+
+    # Clean the storage manually for subsequent tests if necessary
+    for f in chunk_files:
+        await storage.delete_data(f)
 
 
 @pytest.mark.asyncio
@@ -677,3 +735,57 @@ async def test_chunk_manager_context_manager_external_cancel_integration(
     assert inner_manager._monitor_task is None or inner_manager._monitor_task.done()
     for ctx in inner_manager._chunks_tasks.values():
         assert ctx.task.done() or ctx.task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_recovery_integration(setup_downloader_and_config, storage):
+    """Integration: partial download, stop manager, resume with recovered stats"""
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    r1 = ChunkRange(0, 51199)
+    r2 = ChunkRange(51200, None)
+
+    # 1. Partial Download
+    async with ChunkManager(download_config, downloader, storage) as manager:
+        manager.start_chunk(r1)
+        await manager.wait_for_completed_chunks()
+        # Exit context - files should be preserved
+
+    listed = await storage.list_data()
+    chunk_files = [f.key for f in listed if "file_100k.bin.sdownload" in f.key]
+    assert len(chunk_files) == 1
+
+    # 2. Recovery
+    recovered_stat = ChunkDownloadStats(
+        chunk_file_name=chunk_files[0],
+        range=r1,
+        file_size=51200,
+        bytes_downloaded=51200,
+        status=EDownloadStatus.COMPLETED,
+    )
+
+    async with ChunkManager(
+        download_config, downloader, storage, recovered_stats=[recovered_stat]
+    ) as manager_resumed:
+        assert manager_resumed.get_downloaded_bytes() == 51200
+
+        # Start remaining
+        manager_resumed.start_chunk(r2)
+        await manager_resumed.wait_for_completed_chunks()
+
+        # Final merge
+        dest_file = await manager_resumed.merge_chunks(cleanup=True)
+        assert dest_file == download_config.file_name
+
+    # 3. Verify final file
+    listed_final = await storage.list_data()
+    assert any(f.key == download_config.file_name for f in listed_final)
+    # Check that temp files are gone after merge cleanup
+    chunk_files_after = [
+        f.key for f in listed_final if "file_100k.bin.sdownload" in f.key
+    ]
+    assert len(chunk_files_after) == 0

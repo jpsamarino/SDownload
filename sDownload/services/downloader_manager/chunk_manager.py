@@ -43,12 +43,16 @@ class ChunkManager:
         downloader: DownloaderProtocol,
         storage: FileStorageProtocol,
         throttler: ThrottlerProtocol | None = None,
+        recovered_stats: list[ChunkDownloadStats] | None = None,
     ):
         self._cfg = cfg
         self._downloader = downloader
         self._storage = storage
         self._throttler = throttler or get_default_throttler()
         self._chunks_stats: dict[ChunkRange, ChunkDownloadStats] = {}
+        if recovered_stats:
+            for stat in recovered_stats:
+                self._chunks_stats[stat.range] = stat
         self._chunks_tasks: dict[ChunkRange, ChunkTaskContext] = {}
         self._wait_lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
@@ -60,7 +64,7 @@ class ChunkManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type and exc_type is not asyncio.CancelledError:
             logger.warning("ChunkManager exiting context with error: %s", exc_val)
-        await self.cleanup()
+        await self.cleanup(delete_files=False)
 
     def __del__(self):
         if not self._cleaned_up:
@@ -331,22 +335,32 @@ class ChunkManager:
             if s.status in (EDownloadStatus.COMPLETED, EDownloadStatus.DOWNLOADING)
         )
 
-    async def cleanup(self) -> None:
+    async def cleanup(self, delete_files: bool = True) -> None:
         """
         Stops all active processes, deletes temporary files, and clears internal state.
         """
         if self._cleaned_up:
             return
 
-        logger.info("Performing comprehensive cleanup of ChunkManager")
+        logger.info(
+            "Performing comprehensive cleanup of ChunkManager (delete_files=%s)",
+            delete_files,
+        )
         self._cleaned_up = True
 
         await self.cancel_all_chunks()
-        await cleanup_temp_files(self._storage, self._chunks_stats.values())
+
+        if delete_files:
+            await cleanup_temp_files(self._storage, self._chunks_stats.values())
+            logger.info(
+                "Cleanup complete: all tasks stopped, files deleted, and state cleared."
+            )
+        else:
+            logger.info(
+                "Cleanup complete: all tasks stopped, files PRESERVED, state cleared."
+            )
+
         self._chunks_stats.clear()
-        logger.info(
-            "Cleanup complete: all tasks stopped, files deleted, and state cleared."
-        )
 
     async def cancel_all_chunks(self) -> None:
         for chunk_range, task in self._chunks_tasks.items():
