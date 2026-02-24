@@ -789,3 +789,40 @@ async def test_chunk_manager_recovery_integration(setup_downloader_and_config, s
         f.key for f in listed_final if "file_100k.bin.sdownload" in f.key
     ]
     assert len(chunk_files_after) == 0
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_cancel_and_restart_integration(
+    setup_downloader_and_config, storage
+):
+    """Integration: start, cancel, restart the same chunks, and merge"""
+    setup = await setup_downloader_and_config(
+        file_name="file_100k.bin", limit_speed=False
+    )
+    download_config = setup["download_config"]
+    downloader = setup["downloader"]
+
+    r1 = ChunkRange(0, 51199)
+    r2 = ChunkRange(51200, None)
+
+    async with ChunkManager(download_config, downloader, storage) as manager:
+        # 1. Start and cancel r1
+        manager.start_chunk(r1)
+        await asyncio.sleep(0.05)  # let it download something
+        await manager.cancel_chunk(r1)
+        assert manager.stats[r1].status == EDownloadStatus.CANCELLED
+
+        # 2. Restart r1 and start r2
+        manager.start_chunk(r1)
+        manager.start_chunk(r2)
+
+        await manager.wait_for_completed_chunks()
+
+        # 3. Final merge
+        dest_file = await manager.merge_chunks(cleanup=True)
+        assert dest_file == download_config.file_name
+
+    # 4. Verify final file
+    listed_final = await storage.list_data()
+    file_info = next(f for f in listed_final if f.key == download_config.file_name)
+    assert file_info.size_bytes == 102400

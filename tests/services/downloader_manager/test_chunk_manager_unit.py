@@ -803,3 +803,32 @@ async def test_init_with_recovered_stats(
     assert r1 in manager.stats
     assert manager.stats[r1].status == EDownloadStatus.COMPLETED
     assert manager.get_downloaded_bytes() == 1001
+
+
+@pytest.mark.asyncio
+async def test_start_chunk_after_cancellation(chunk_manager):
+    """Verify that a cancelled chunk can be restarted (starts from zero/overwrites)"""
+    manager = chunk_manager
+    r1 = ChunkRange(0, 100)
+
+    # 1. Start and then cancel
+    manager.start_chunk(r1)
+    await manager.cancel_chunk(r1)
+    assert manager.stats[r1].status == EDownloadStatus.CANCELLED
+
+    # 2. Start again - should create a fresh task and fresh stats
+    # (Existing stats become unreachable via new stats calls, or strictly overwritten in dict)
+    manager.start_chunk(r1)
+
+    assert r1 in manager._chunks_tasks
+    assert manager.stats[r1].status in (
+        EDownloadStatus.PENDING,
+        EDownloadStatus.DOWNLOADING,
+    )
+
+    # Wait for completion to see it actually works
+    await manager.wait_for_completed_chunks()
+    assert manager.stats[r1].status == EDownloadStatus.COMPLETED
+    assert manager.stats[r1].bytes_downloaded == 101
+
+    await manager.cleanup()
