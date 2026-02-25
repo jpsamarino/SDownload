@@ -96,7 +96,6 @@ class StrategyAction:
 AnyStrategyAction: TypeAlias = (
     StartChunkAction | CancelChunkAction | ResizeChunkAction | SetSpeedAction
 )
-ChunkActionList: TypeAlias = list[AnyStrategyAction]
 
 
 class ChunkFragment(NamedTuple):

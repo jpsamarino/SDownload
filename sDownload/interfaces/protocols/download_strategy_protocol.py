@@ -4,7 +4,7 @@ from sDownload.interfaces.models import (
     ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
-    ChunkActionList,
+    AnyStrategyAction,
 )
 
 
@@ -27,7 +27,7 @@ class DownloadStrategyProtocol(Protocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
-    ) -> ChunkActionList:
+    ) -> list[AnyStrategyAction]:
         """Return actions that should start new chunk downloads."""
         ...
 
@@ -35,7 +35,7 @@ class DownloadStrategyProtocol(Protocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
-    ) -> ChunkActionList:
+    ) -> list[AnyStrategyAction]:
         """Return actions that should update currently running downloads."""
         ...
 

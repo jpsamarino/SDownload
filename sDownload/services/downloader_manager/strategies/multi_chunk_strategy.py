@@ -2,8 +2,8 @@ from sDownload.interfaces.models import (
     ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
-    ChunkActionList,
     StrategyAction,
+    AnyStrategyAction,
 )
 from sDownload.interfaces.protocols import DownloadStrategyProtocol
 from sDownload.utils import calculate_ranges
@@ -39,7 +39,7 @@ class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
-    ) -> ChunkActionList:
+    ) -> list[AnyStrategyAction]:
         if chunks_stats:
             return []
 
@@ -50,7 +50,7 @@ class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
-    ) -> ChunkActionList:
+    ) -> list[AnyStrategyAction]:
         return []
 
     def on_end(

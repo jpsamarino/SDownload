@@ -3,7 +3,6 @@ from .chunk_models import (
     ChunkFragment,
     StrategyAction,
     AnyStrategyAction,
-    ChunkActionList,
 )
 from .file_info_model import ResourceInfo
 from .filesystem_info_model import StoredFileInfo
@@ -18,7 +17,6 @@ __all__ = [
     "ChunkFragment",
     "StrategyAction",
     "AnyStrategyAction",
-    "ChunkActionList",
     "ResourceInfo",
     "StoredFileInfo",
     "HttpConfigModel",
