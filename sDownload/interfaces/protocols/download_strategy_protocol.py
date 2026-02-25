@@ -27,16 +27,39 @@ class DownloadStrategyProtocol(Protocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
+        available_slots: int,
     ) -> list[AnyStrategyAction]:
-        """Return actions that should start new chunk downloads."""
+        """
+        Return actions that should start new chunk downloads.
+
+        Args:
+            dl_stats: Overall statistics for the download.
+            chunks_stats: Statistics for each currently managed chunk.
+            available_slots: The "balance" or "stock" of connections this strategy is allowed
+                             to use at this moment. This value reflects global or domain
+                             limits enforced by the DownloadManager. The strategy should
+                             never return more `StartChunkAction`s than this available balance.
+        """
         ...
 
     def on_update(
         self,
         dl_stats: DownloadStats,
         chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
+        available_slots: int,
     ) -> list[AnyStrategyAction]:
-        """Return actions that should update currently running downloads."""
+        """
+        Return actions that should update currently running downloads.
+
+        Args:
+            dl_stats: Overall statistics for the download.
+            chunks_stats: Statistics for each currently managed chunk.
+            available_slots: The number of new connections this strategy can open right now.
+                             This acts as a connection pool managed externally. If a chunk finishes
+                             or is cancelled, slots become available again. The strategy uses
+                             this to decide whether it can aggressively split active chunks
+                             or if it must wait for ongoing connections to finish.
+        """
         ...
 
     def on_end(

@@ -39,17 +39,25 @@ class MultiChunkDownloadStrategy(DownloadStrategyProtocol):
         self,
         dl_stats: DownloadStats,
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
+        available_slots: int,
     ) -> list[AnyStrategyAction]:
-        if chunks_stats:
+        if chunks_stats or available_slots <= 0:
             return []
 
-        ranges = self._calc_initial_ranges(dl_stats.file_size)
+        # We limit the initial ranges to min(target_qt_conn, available_slots)
+        # to ensure we don't request more connections than the manager allows.
+        actual_conn_target = min(self.target_qt_conn, available_slots)
+        if actual_conn_target == 0:
+            return []
+
+        ranges = calculate_ranges(dl_stats.file_size, actual_conn_target, self.cache)
         return [StrategyAction.Start(range=r) for r in ranges]
 
     def on_update(
         self,
         dl_stats: DownloadStats,
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
+        available_slots: int,
     ) -> list[AnyStrategyAction]:
         return []
 
