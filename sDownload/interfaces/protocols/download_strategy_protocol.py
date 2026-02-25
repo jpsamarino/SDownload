@@ -1,10 +1,10 @@
-from typing import Protocol, Dict, TypedDict, NamedTuple
+from typing import Protocol, Dict
 
 from sDownload.interfaces.models import (
-    ChunkPlan,
     ChunkRange,
     ChunkDownloadStats,
     DownloadStats,
+    ChunkActionList,
 )
 
 
@@ -24,19 +24,25 @@ class DownloadStrategyProtocol(Protocol):
         ...
 
     def on_start(
-        self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkPlan:
+        self,
+        dl_stats: DownloadStats,
+        chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
+    ) -> ChunkActionList:
         """Return actions that should start new chunk downloads."""
         ...
 
     def on_update(
-        self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
-    ) -> ChunkPlan:
+        self,
+        dl_stats: DownloadStats,
+        chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
+    ) -> ChunkActionList:
         """Return actions that should update currently running downloads."""
         ...
 
     def on_end(
-        self, dl_stats: DownloadStats, chunks_stats: Dict[str, ChunkDownloadStats]
+        self,
+        dl_stats: DownloadStats,
+        chunks_stats: Dict[ChunkRange, ChunkDownloadStats],
     ) -> None:
         """Execute any cleanup or finalization when downloads are stopped or ended."""
         ...

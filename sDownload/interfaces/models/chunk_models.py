@@ -1,4 +1,4 @@
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, TypeAlias
 
 
 class ChunkRange(NamedTuple):
@@ -63,15 +63,40 @@ class ChunkRange(NamedTuple):
         return False
 
 
-class ChunkResizeParams(NamedTuple):
-    old_range: ChunkRange
+class StartChunkAction(NamedTuple):
+    range: ChunkRange
+    target_speed_bps: int | None = None
+
+
+class CancelChunkAction(NamedTuple):
+    range: ChunkRange
+
+
+class ResizeChunkAction(NamedTuple):
+    current_range: ChunkRange
     new_range: ChunkRange
+    target_speed_bps: int | None = None
 
 
-class ChunkPlan(TypedDict):
-    start: list[ChunkRange] | None
-    cancel: list[ChunkRange] | None
-    resize: list[ChunkResizeParams] | None
+class SetSpeedAction(NamedTuple):
+    range: ChunkRange
+    target_speed_bps: int | None
+
+
+class StrategyAction:
+    """Namespace for the actions that a strategy can emit."""
+
+    __slots__ = ()
+    Start = StartChunkAction
+    Cancel = CancelChunkAction
+    Resize = ResizeChunkAction
+    SetSpeed = SetSpeedAction
+
+
+AnyStrategyAction: TypeAlias = (
+    StartChunkAction | CancelChunkAction | ResizeChunkAction | SetSpeedAction
+)
+ChunkActionList: TypeAlias = list[AnyStrategyAction]
 
 
 class ChunkFragment(NamedTuple):

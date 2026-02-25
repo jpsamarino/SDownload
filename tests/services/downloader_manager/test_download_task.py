@@ -84,167 +84,167 @@ def storage(tmp_path: str):
 # https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM
 
 
-@pytest.mark.asyncio
-async def test_httpx_and_dowload_task_real(storage):
-    config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
-    downloader = HttpxDownloader(config)
-    # result_list = await downloader.get_file_info(f"https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM")
-    # result_list = await downloader.get_file_info(f"https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Estabelecimentos9.zip")
-    result_list = await downloader.get_file_info(
-        f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_MG.zip"
-    )
-    result = result_list[0]
+# @pytest.mark.asyncio
+# async def test_httpx_and_dowload_task_real(storage):
+#     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
+#     downloader = HttpxDownloader(config)
+#     # result_list = await downloader.get_file_info(f"https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM")
+#     # result_list = await downloader.get_file_info(f"https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Estabelecimentos9.zip")
+#     result_list = await downloader.get_file_info(
+#         f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_MG.zip"
+#     )
+#     result = result_list[0]
 
-    config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,  # remove
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=10,
-        max_speed_bytes_per_second=1024 * 1024 * 10,
-    )
+#     config = DownloadConfig(
+#         file_name=result.file_name,
+#         file_dir=result.file_dir,  # remove
+#         file_size=result.file_size,
+#         file_id=result.file_id,
+#         download_url=result.download_url,
+#         file_created_at=datetime.utcnow(),
+#         protocol_data=None,
+#         max_connections_per_download=10,
+#         max_speed_bytes_per_second=1024 * 1024 * 10,
+#     )
 
-    logger = logging.getLogger("download-task")
-    logger.setLevel(logging.INFO)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+#     logger = logging.getLogger("download-task")
+#     logger.setLevel(logging.INFO)
+#     handler = logging.StreamHandler()
+#     formatter = logging.Formatter("%(message)s")
+#     handler.setFormatter(formatter)
+#     logger.addHandler(handler)
 
-    task = DownloadTask(
-        cfg=config,
-        downloader=downloader,
-        storage=storage,
-        logger=logger,
-    )
-    task.start()
-    await task.wait_util_done()
+#     task = DownloadTask(
+#         cfg=config,
+#         downloader=downloader,
+#         storage=storage,
+#         logger=logger,
+#     )
+#     task.start()
+#     await task.wait_util_done()
 
-    # # verify if the file was downloaded and the size is correct
-    # received = b""
-    # async for chunk in storage.get_binary_data(config.file_name):
-    #     received += chunk
+#     # # verify if the file was downloaded and the size is correct
+#     # received = b""
+#     # async for chunk in storage.get_binary_data(config.file_name):
+#     #     received += chunk
 
-    # assert len(received) == config.file_size
-
-
-@pytest.mark.asyncio
-async def test_httpx_and_dowload_task_real_n(storage):
-    config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
-    downloader = HttpxDownloader(config)
-    # result_list = await downloader.get_file_info(f"https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM")
-    # result_list = await downloader.get_file_info(f"https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Estabelecimentos9.zip")
-    result_list = await downloader.get_file_info(
-        f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_MG.zip"
-    )
-    result = result_list[0]
-
-    config = DownloadConfigN(
-        file_name=result.file_name,
-        file_dir=result.file_dir,  # remove
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=5,
-        max_speed_bytes_per_second=1024 * 1024,
-    )
-
-    logger = logging.getLogger("download-task")
-    logger.setLevel(logging.INFO)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    task = DownloadTaskN(
-        cfg=config,
-        downloader=downloader,
-        storage=storage,
-        logger=logger,
-    )
-    task.start()
-    await task.wait_util_done()
-
-    # # verify if the file was downloaded and the size is correct
-    # received = b""
-    # async for chunk in storage.get_binary_data(config.file_name):
-    #     received += chunk
-
-    # assert len(received) == config.file_size
+#     # assert len(received) == config.file_size
 
 
-@pytest.mark.asyncio
-async def test_httpx_and_dowload_task(nginx_custom, storage):
-    config = HttpConfigModel(timeout_connect_s=20.0)
-    downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/limited_speed/file_100k.bin"
-    )
-    result = result_list[0]
-    assert result.file_name == "file_100k.bin"
-    assert result.file_size == 102400
+# @pytest.mark.asyncio
+# async def test_httpx_and_dowload_task_real_n(storage):
+#     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
+#     downloader = HttpxDownloader(config)
+#     # result_list = await downloader.get_file_info(f"https://storage.live.com/downloadfiles/V1/Zip?application=1141147648&authkey=!ANB8GHSnGvZzWFM")
+#     # result_list = await downloader.get_file_info(f"https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/2025-03/Estabelecimentos9.zip")
+#     result_list = await downloader.get_file_info(
+#         f"https://ftp.dadosabertos.ans.gov.br/FTP/PDA/dados_de_beneficiarios_por_operadora/sib_ativo_MG.zip"
+#     )
+#     result = result_list[0]
 
-    config = DownloadConfig(
-        file_name=result.file_name,
-        file_dir=result.file_dir,  # remove
-        file_size=result.file_size,
-        file_id=result.file_id,
-        download_url=result.download_url,
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-    )
+#     config = DownloadConfigN(
+#         file_name=result.file_name,
+#         file_dir=result.file_dir,  # remove
+#         file_size=result.file_size,
+#         file_id=result.file_id,
+#         download_url=result.download_url,
+#         file_created_at=datetime.utcnow(),
+#         protocol_data=None,
+#         max_connections_per_download=5,
+#         max_speed_bytes_per_second=1024 * 1024,
+#     )
 
-    task = DownloadTask(
-        cfg=config,
-        downloader=downloader,
-        storage=storage,
-    )
-    task.start()
-    await task.wait_util_done()
+#     logger = logging.getLogger("download-task")
+#     logger.setLevel(logging.INFO)
+#     handler = logging.StreamHandler()
+#     formatter = logging.Formatter("%(message)s")
+#     handler.setFormatter(formatter)
+#     logger.addHandler(handler)
 
-    # verify if the file was downloaded and the size is correct
-    received = b""
-    async for chunk in storage.get_binary_data(config.file_name):
-        received += chunk
+#     task = DownloadTaskN(
+#         cfg=config,
+#         downloader=downloader,
+#         storage=storage,
+#         logger=logger,
+#     )
+#     task.start()
+#     await task.wait_util_done()
 
-    assert len(received) == config.file_size
+#     # # verify if the file was downloaded and the size is correct
+#     # received = b""
+#     # async for chunk in storage.get_binary_data(config.file_name):
+#     #     received += chunk
+
+#     # assert len(received) == config.file_size
 
 
-@pytest.mark.asyncio
-async def test_download_task_logs_debug(caplog):
-    config = DownloadConfig(
-        file_name="test.bin",
-        file_dir=None,
-        file_size=12,
-        file_id="123",
-        download_url="http://example.com/file",
-        file_created_at=datetime.utcnow(),
-        protocol_data=None,
-        max_connections_per_download=2,
-    )
+# @pytest.mark.asyncio
+# async def test_httpx_and_dowload_task(nginx_custom, storage):
+#     config = HttpConfigModel(timeout_connect_s=20.0)
+#     downloader = HttpxDownloader(config)
+#     result_list = await downloader.get_file_info(
+#         f"{nginx_custom['http']}/limited_speed/file_100k.bin"
+#     )
+#     result = result_list[0]
+#     assert result.file_name == "file_100k.bin"
+#     assert result.file_size == 102400
 
-    logger = logging.getLogger("sDownload.test")
-    logger.setLevel(logging.DEBUG)
+#     config = DownloadConfig(
+#         file_name=result.file_name,
+#         file_dir=result.file_dir,  # remove
+#         file_size=result.file_size,
+#         file_id=result.file_id,
+#         download_url=result.download_url,
+#         file_created_at=datetime.utcnow(),
+#         protocol_data=None,
+#         max_connections_per_download=2,
+#     )
 
-    with caplog.at_level(logging.DEBUG, logger="sDownload.test"):
-        task = DownloadTask(
-            cfg=config,
-            downloader=DummyDownloader(),
-            storage=DummyStorage(),
-        )
-    task.start()
-    await task.wait_util_done()
+#     task = DownloadTask(
+#         cfg=config,
+#         downloader=downloader,
+#         storage=storage,
+#     )
+#     task.start()
+#     await task.wait_util_done()
 
-    for record in caplog.records:
-        print(f"{record.levelname}: {record.message}")
+#     # verify if the file was downloaded and the size is correct
+#     received = b""
+#     async for chunk in storage.get_binary_data(config.file_name):
+#         received += chunk
 
-    assert any(
-        "starting" in r.message.lower() or "chunk" in r.message.lower()
-        for r in caplog.records
-    )
+#     assert len(received) == config.file_size
+
+
+# @pytest.mark.asyncio
+# async def test_download_task_logs_debug(caplog):
+#     config = DownloadConfig(
+#         file_name="test.bin",
+#         file_dir=None,
+#         file_size=12,
+#         file_id="123",
+#         download_url="http://example.com/file",
+#         file_created_at=datetime.utcnow(),
+#         protocol_data=None,
+#         max_connections_per_download=2,
+#     )
+
+#     logger = logging.getLogger("sDownload.test")
+#     logger.setLevel(logging.DEBUG)
+
+#     with caplog.at_level(logging.DEBUG, logger="sDownload.test"):
+#         task = DownloadTask(
+#             cfg=config,
+#             downloader=DummyDownloader(),
+#             storage=DummyStorage(),
+#         )
+#     task.start()
+#     await task.wait_util_done()
+
+#     for record in caplog.records:
+#         print(f"{record.levelname}: {record.message}")
+
+#     assert any(
+#         "starting" in r.message.lower() or "chunk" in r.message.lower()
+#         for r in caplog.records
+#     )

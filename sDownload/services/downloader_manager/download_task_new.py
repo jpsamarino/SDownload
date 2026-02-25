@@ -14,11 +14,12 @@ from sDownload.interfaces.models import (
     ChunkDownloadStats,
     DownloadStats,
     EDownloadStatus,
+    StrategyAction,
 )
 from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
     throttle_and_track_async_stream,
 )
-from sDownload.services.downloader_manager.dl_multi_chunk_strategy import (
+from sDownload.services.downloader_manager.strategies.multi_chunk_strategy import (
     MultiChunkDownloadStrategy,
 )
 
@@ -185,21 +186,22 @@ class DownloadTask:
             operation_actions = self._downloader_strategy.on_update(
                 self._download_stats, self._chunks_stats
             )
-            if operation_actions["start"]:
-                for range in operation_actions["start"]:
-                    self._chunks_tasks[self._key(range.start, range.end)] = (
-                        asyncio.create_task(
-                            self._download_chunk(range.start, range.end)
+            for action in operation_actions:
+                match action:
+                    case StrategyAction.Start(range, speed):
+                        self._chunks_tasks[self._key(range.start, range.end)] = (
+                            asyncio.create_task(
+                                self._download_chunk(range.start, range.end)
+                            )
                         )
-                    )
-
-            if operation_actions["cancel"]:
-                for range in operation_actions["cancel"]:
-                    self._chunks_tasks[self._key(range.start, range.end)].cancel()
-                    try:
-                        await self._chunks_tasks[self._key(range.start, range.end)]
-                    except asyncio.CancelledError:
-                        self._logger.info("Chunk task %s cancelled.", range)
+                    case StrategyAction.Cancel(range):
+                        key = self._key(range.start, range.end)
+                        if key in self._chunks_tasks:
+                            self._chunks_tasks[key].cancel()
+                            try:
+                                await self._chunks_tasks[key]
+                            except asyncio.CancelledError:
+                                self._logger.info("Chunk task %s cancelled.", range)
 
             qt_chunks = len(self._chunks_tasks)
             if qt_chunks > 0:
@@ -255,10 +257,14 @@ class DownloadTask:
         operation_actions = self._downloader_strategy.on_start(
             self._download_stats, self._chunks_stats
         )
-        for range in operation_actions["start"]:
-            self._chunks_tasks[self._key(range.start, range.end)] = asyncio.create_task(
-                self._download_chunk(range.start, range.end)
-            )
+        for action in operation_actions:
+            match action:
+                case StrategyAction.Start(range, speed):
+                    self._chunks_tasks[self._key(range.start, range.end)] = (
+                        asyncio.create_task(
+                            self._download_chunk(range.start, range.end)
+                        )
+                    )
 
     def start(self):
         self._logger.info("subtask to [%s] started.", self._cfg.file_name)
