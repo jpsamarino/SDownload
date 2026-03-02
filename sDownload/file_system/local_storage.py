@@ -24,8 +24,12 @@ class LocalStorage(FileStorageProtocol):
         :param chunk_size: size of the chunks in bytes for streaming.
         :param io_buffer_size: size of the buffer for heavy I/O operations (crop/merge).
         """
-        self.storage_dir = Path(storage_dir)
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_dir = Path(storage_dir).resolve()
+        if not self.storage_dir.parent.exists():
+            raise FileNotFoundError(
+                f"Parent directory {self.storage_dir.parent} does not exist"
+            )
+        self.storage_dir.mkdir(parents=False, exist_ok=True)
         self.chunk_size = chunk_size
         self.io_buffer_size = io_buffer_size
 

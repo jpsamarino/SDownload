@@ -498,3 +498,22 @@ async def test_get_data_info_success(storage: LocalStorage, tmp_path: Path):
 async def test_get_data_info_not_found(storage: LocalStorage):
     info = await storage.get_data_info("missing_file.bin")
     assert info is None
+
+
+def test_local_storage_init_creates_last_dir(tmp_path: Path):
+    dest_dir = tmp_path / "new_subdir"
+    assert not dest_dir.exists()
+
+    # Should create "new_subdir" since tmp_path exists
+    ls = LocalStorage(storage_dir=dest_dir)
+    assert ls.storage_dir.exists()
+    assert ls.storage_dir.is_dir()
+
+
+def test_local_storage_init_fails_on_multi_level_missing(tmp_path: Path):
+    dest_dir = tmp_path / "level1" / "level2"
+    assert not (tmp_path / "level1").exists()
+
+    # Should fail because "level1" doesn't exist
+    with pytest.raises(FileNotFoundError, match="Parent directory"):
+        LocalStorage(storage_dir=dest_dir)
