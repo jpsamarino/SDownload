@@ -19,8 +19,8 @@ class HttpxDownloader(DownloaderProtocol):
     Handles ranged downloads, retries, timeout, SSL verification, cookies and proxies.
     """
 
-    def __init__(self, config: HttpConfigModel):
-        self.config = config
+    def __init__(self, config: HttpConfigModel | None = None):
+        self.config = config or HttpConfigModel()
 
     def _build_proxy_url(self, spc) -> str:
         """
