@@ -97,7 +97,11 @@ class DownloadStats:
         # use EMA and solve problem with speed_bps when set_bytes_downloaded is used to avoid negative speed
         now = time.monotonic()
         time_elapsed_avg = now - self.start_time
-        self.progress = 100.0 * self.bytes_downloaded / self.file_size
+        self.progress = (
+            100.0 * self.bytes_downloaded / self.file_size
+            if self.file_size > 0
+            else 0.0
+        )
         self.avg_speed_bps = (
             self.bytes_downloaded / time_elapsed_avg if time_elapsed_avg > 0 else 0
         )

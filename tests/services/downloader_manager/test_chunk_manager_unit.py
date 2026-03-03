@@ -8,10 +8,10 @@ from sDownload.services.downloader_manager.chunk_manager import (
 )
 from sDownload.interfaces.models import (
     ChunkRange,
-    DownloadConfig,
     EDownloadStatus,
     ChunkDownloadStats,
 )
+from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
 
 from sDownload.file_system.local_storage import LocalStorage
 from datetime import datetime
@@ -27,17 +27,11 @@ def temp_storage(tmp_path):
 
 
 @pytest.fixture
-def download_config(temp_storage):
-    return DownloadConfig(
+def chunk_manager_params():
+    return ChunkManagerParams(
         file_name="test_file",
-        file_dir=str(temp_storage.storage_dir),
         file_size=10000,
-        file_id="123",
         download_url="http://test.com",
-        file_created_at=datetime.now(),
-        protocol_data=None,
-        max_connections_per_download=1,
-        max_speed_bytes_per_second=100000,
     )
 
 
@@ -60,8 +54,8 @@ def mock_downloader():
 
 
 @pytest.fixture
-def chunk_manager(download_config, mock_downloader, temp_storage):
-    return ChunkManager(download_config, mock_downloader, temp_storage)
+def chunk_manager(chunk_manager_params, mock_downloader, temp_storage):
+    return ChunkManager(chunk_manager_params, mock_downloader, temp_storage)
 
 
 @pytest.mark.asyncio
@@ -445,19 +439,12 @@ async def test_cancel_chunk_already_completed(chunk_manager):
 
 @pytest.mark.asyncio
 async def test_register_chunk_stats_file_size_none(mock_downloader, temp_storage):
-    # Config with file_size None
-    cfg = DownloadConfig(
+    params = ChunkManagerParams(
         file_name="test",
-        file_dir=str(temp_storage.storage_dir),
         file_size=None,
-        file_id="1",
         download_url="http://test",
-        file_created_at=datetime.now(),
-        protocol_data=None,
-        max_connections_per_download=1,
-        max_speed_bytes_per_second=1000,
     )
-    manager = ChunkManager(cfg, mock_downloader, temp_storage)
+    manager = ChunkManager(params, mock_downloader, temp_storage)
     r1 = ChunkRange(0, 100)
 
     stats = manager._register_chunk_stats(r1)
@@ -581,7 +568,7 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
     c3_range = ChunkRange(20, 29)
 
     # Standardize config for this test: total coverage is 30 bytes
-    chunk_manager._cfg.file_size = 30
+    chunk_manager._params = chunk_manager._params._replace(file_size=30)
 
     s1 = chunk_manager._register_chunk_stats(c1_range)
     s2 = chunk_manager._register_chunk_stats(c2_range)
@@ -601,7 +588,7 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
 
     dest_key = await chunk_manager.merge_chunks(cleanup=True)
 
-    assert dest_key == chunk_manager._cfg.file_name
+    assert dest_key == chunk_manager._params.file_name
 
     content = b""
     async for chunk in temp_storage.get_binary_data(dest_key):
@@ -717,10 +704,12 @@ async def test_chunk_manager_monitor_stops_on_cancel_all_chunks(chunk_manager):
 
 @pytest.mark.asyncio
 async def test_chunk_manager_context_manager_cleanup(
-    download_config, mock_downloader, temp_storage
+    chunk_manager_params, mock_downloader, temp_storage
 ):
     """ChunkManager should cleanup automatically when used as an async context manager"""
-    async with ChunkManager(download_config, mock_downloader, temp_storage) as manager:
+    async with ChunkManager(
+        chunk_manager_params, mock_downloader, temp_storage
+    ) as manager:
         manager._cleaned_up = False  # Ensure it's not cleaned up yet
 
     assert manager._cleaned_up is True
@@ -728,12 +717,12 @@ async def test_chunk_manager_context_manager_cleanup(
 
 @pytest.mark.asyncio
 async def test_chunk_manager_context_manager_with_error(
-    download_config, mock_downloader, temp_storage
+    chunk_manager_params, mock_downloader, temp_storage
 ):
     """ChunkManager should cleanup even if an exception occurs inside the context"""
     try:
         async with ChunkManager(
-            download_config, mock_downloader, temp_storage
+            chunk_manager_params, mock_downloader, temp_storage
         ) as manager:
             raise ValueError("Test Error")
     except ValueError:
@@ -744,7 +733,7 @@ async def test_chunk_manager_context_manager_with_error(
 
 @pytest.mark.asyncio
 async def test_chunk_manager_del_defensive_cleanup(
-    download_config, mock_downloader, temp_storage, capsys
+    chunk_manager_params, mock_downloader, temp_storage, capsys
 ):
     """
     If ChunkManager is deleted without cleanup(), it should:
@@ -754,7 +743,7 @@ async def test_chunk_manager_del_defensive_cleanup(
     import gc
 
     # Create manager and start a chunk to have an active task
-    manager = ChunkManager(download_config, mock_downloader, temp_storage)
+    manager = ChunkManager(chunk_manager_params, mock_downloader, temp_storage)
     r1 = ChunkRange(0, 100)
     manager.start_chunk(r1)
 
@@ -764,7 +753,7 @@ async def test_chunk_manager_del_defensive_cleanup(
 
     # Delete the manager without calling cleanup()
     # We need to be careful with GC in tests
-    name = manager._cfg.file_name
+    name = manager._params.file_name
     del manager
     gc.collect()  # Force garbage collection
 
@@ -783,7 +772,7 @@ async def test_chunk_manager_del_defensive_cleanup(
 
 @pytest.mark.asyncio
 async def test_init_with_recovered_stats(
-    download_config, mock_downloader, temp_storage
+    chunk_manager_params, mock_downloader, temp_storage
 ):
     r1 = ChunkRange(0, 1000)
     recovered = [
@@ -797,7 +786,7 @@ async def test_init_with_recovered_stats(
     ]
 
     manager = ChunkManager(
-        download_config, mock_downloader, temp_storage, recovered_stats=recovered
+        chunk_manager_params, mock_downloader, temp_storage, recovered_stats=recovered
     )
 
     assert r1 in manager.stats

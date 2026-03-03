@@ -10,6 +10,7 @@ from sDownload.interfaces.models import (
     EDownloadStatus,
     DownloadConfig,
 )
+from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
 from sDownload.interfaces.protocols import (
     DownloaderProtocol,
     FileStorageProtocol,
@@ -39,13 +40,13 @@ class ChunkTaskContext(NamedTuple):
 class ChunkManager:
     def __init__(
         self,
-        cfg: DownloadConfig,
+        params: ChunkManagerParams,
         downloader: DownloaderProtocol,
         storage: FileStorageProtocol,
         throttler: ThrottlerProtocol | None = None,
         recovered_stats: list[ChunkDownloadStats] | None = None,
     ):
-        self._cfg = cfg
+        self._params = params
         self._downloader = downloader
         self._storage = storage
         self._throttler = throttler or get_default_throttler()
@@ -69,7 +70,7 @@ class ChunkManager:
     def __del__(self):
         if not self._cleaned_up:
             print(
-                f"\nERROR: ChunkManager for '{self._cfg.file_name}' was destroyed without calling cleanup(). "
+                f"\nERROR: ChunkManager for '{self._params.file_name}' was destroyed without calling cleanup(). "
                 f"Please use 'async with' or call await manager.cleanup() to avoid resource leaks."
             )
             if hasattr(self, "_chunks_tasks") and self._chunks_tasks:
@@ -97,8 +98,8 @@ class ChunkManager:
         status: EDownloadStatus = EDownloadStatus.PENDING,
     ) -> ChunkDownloadStats:
 
-        _, total_bytes = get_effective_range_info(chunk_range, self._cfg.file_size)
-        chunk_file_name = format_chunk_file_name(chunk_range, self._cfg.file_name)
+        _, total_bytes = get_effective_range_info(chunk_range, self._params.file_size)
+        chunk_file_name = format_chunk_file_name(chunk_range, self._params.file_name)
 
         stats = ChunkDownloadStats(
             range=chunk_range,
@@ -148,7 +149,7 @@ class ChunkManager:
                     except Exception as e:
                         logger.warning(
                             "%s: Chunk %s failed: %s",
-                            self._cfg.file_name,
+                            self._params.file_name,
                             chunk_range,
                             e,
                             exc_info=False,
@@ -176,7 +177,7 @@ class ChunkManager:
                         downloader=self._downloader,
                         storage=self._storage,
                         stats=stats,
-                        download_url=self._cfg.download_url,
+                        download_url=self._params.download_url,
                         throttler=self._throttler,
                         init_signal=init_signal,
                     )
@@ -185,7 +186,9 @@ class ChunkManager:
             )
             if self._monitor_task is None or self._monitor_task.done():
                 self._monitor_task = asyncio.create_task(
-                    monitor_download_progress(self._chunks_stats, self._cfg.file_name)
+                    monitor_download_progress(
+                        self._chunks_stats, self._params.file_name
+                    )
                 )
         else:
             logger.info("Already have a task for chunk %s", chunk_range)
@@ -408,8 +411,8 @@ class ChunkManager:
             dest_key = await reconstruct_file(
                 storage=self._storage,
                 stats_list=list(self._chunks_stats.values()),
-                final_filename=self._cfg.file_name,
-                total_file_size=self._cfg.file_size,
+                final_filename=self._params.file_name,
+                total_file_size=self._params.file_size,
             )
         except ReconstructionError as e:
             raise RuntimeError(f"Merge failed: {e}") from e
