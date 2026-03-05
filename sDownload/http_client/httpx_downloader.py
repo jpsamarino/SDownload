@@ -6,7 +6,7 @@ import httpx
 from sDownload.exceptions import (
     FileIDMismatchError,
     DownloadRequestError,
-    FileInfoExtractionError,
+    ResourceInfoError,
 )
 from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
@@ -78,7 +78,7 @@ class HttpxDownloader(DownloaderProtocol):
 
                     etag = response.headers.get("ETag")
                     if file_id and etag != file_id:
-                        raise FileIDMismatchError(file_id, etag)
+                        raise FileIDMismatchError(file_id, etag, url)
 
                     try:
                         async for chunk in response.aiter_bytes():
@@ -115,7 +115,7 @@ class HttpxDownloader(DownloaderProtocol):
                             full_size = int(headers.get("Content-Length", 0))
                             resumable = False
                     except Exception as size_err:
-                        raise FileInfoExtractionError(
+                        raise ResourceInfoError(
                             url, "Failed to parse file size", size_err
                         ) from size_err
 
@@ -136,7 +136,7 @@ class HttpxDownloader(DownloaderProtocol):
                             else datetime.now(timezone.utc)
                         )
                     except Exception as date_err:
-                        raise FileInfoExtractionError(
+                        raise ResourceInfoError(
                             url, "Invalid Last-Modified header", date_err
                         ) from date_err
 
@@ -155,6 +155,6 @@ class HttpxDownloader(DownloaderProtocol):
                     ]
 
         except httpx.HTTPError as http_err:
-            raise FileInfoExtractionError(url, "HTTP error", http_err) from http_err
+            raise ResourceInfoError(url, "HTTP error", http_err) from http_err
         except Exception as err:
-            raise FileInfoExtractionError(url, "Unexpected error", err) from err
+            raise ResourceInfoError(url, "Unexpected error", err) from err

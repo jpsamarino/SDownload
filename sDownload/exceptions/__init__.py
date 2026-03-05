@@ -1,15 +1,45 @@
-from .downloader_errors import (
-    DownloaderError,
-    FileIDMismatchError,
+from .base import SDownloadError
+from .communication import (
+    CommunicationError,
     DownloadRequestError,
-    FileInfoExtractionError,
+    DownloadTimeoutError,
+    ResourceInfoError,
+    ResourceNotFoundError,
+    AccessDeniedError,
+    ServerUnavailableError,
 )
-from .reconstruction_errors import ReconstructionError
+from .infrastructure import (
+    InfrastructureError,
+    StorageError,
+    StorageFullError,
+    StoragePermissionError,
+)
+from .data import (
+    DataError,
+    ReconstructionError,
+    FileIDMismatchError,
+    IntegrityError,
+)
 
 __all__ = [
-    "DownloaderError",
-    "FileIDMismatchError",
+    # Base
+    "SDownloadError",
+    # Communication
+    "CommunicationError",
     "DownloadRequestError",
-    "FileInfoExtractionError",
+    "DownloadTimeoutError",
+    "ResourceInfoError",
+    "ResourceNotFoundError",
+    "AccessDeniedError",
+    "ServerUnavailableError",
+    # Infrastructure
+    "InfrastructureError",
+    "StorageError",
+    "StorageFullError",
+    "StoragePermissionError",
+    # Data
+    "DataError",
     "ReconstructionError",
+    "FileIDMismatchError",
+    "IntegrityError",
 ]

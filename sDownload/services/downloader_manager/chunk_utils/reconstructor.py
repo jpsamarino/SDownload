@@ -30,7 +30,9 @@ async def reconstruct_file(
     try:
         fragments = calculate_optimal_coverage(ranges, file_size=total_file_size)
     except Exception as e:
-        raise ReconstructionError(f"Failed to calculate optimal coverage: {e}") from e
+        raise ReconstructionError(
+            f"Failed to calculate optimal coverage: {e}", original=e
+        ) from e
 
     range_map = {s.range: s for s in completed_stats}
 
@@ -55,6 +57,6 @@ async def reconstruct_file(
     try:
         await storage.merge_ranges(merge_configs, final_filename)
     except Exception as e:
-        raise ReconstructionError(f"Storage merge failed: {e}") from e
+        raise ReconstructionError(f"Storage merge failed: {e}", original=e) from e
 
     return final_filename
