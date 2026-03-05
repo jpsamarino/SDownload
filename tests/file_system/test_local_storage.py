@@ -8,6 +8,10 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import StoredFileInfo
+from sDownload.exceptions import (
+    StorageNotFoundError,
+    DownloadRequestError,
+)
 
 
 async def generate_chunks(data: bytes, chunk_size: int):
@@ -90,7 +94,7 @@ async def test_delete_data(storage: FileStorageProtocol, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_get_binary_data_not_found(storage: FileStorageProtocol):
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(StorageNotFoundError):
         async for _ in storage.get_binary_data("nope.bin"):
             pass
 
@@ -144,7 +148,7 @@ async def test_merge_overwrites_existing(storage: LocalStorage):
 
 @pytest.mark.asyncio
 async def test_shrink_file_to_file_not_found(storage: LocalStorage):
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(StorageNotFoundError):
         await storage.shrink_file_to("no_such_file.txt", 10)
 
 
@@ -233,7 +237,7 @@ async def test_move_data_overwrites_existing(storage: LocalStorage, tmp_path: Pa
 
 @pytest.mark.asyncio
 async def test_move_data_source_not_found(storage: LocalStorage):
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(StorageNotFoundError):
         await storage.move_data("non_existent.bin", "dest.bin")
 
 
@@ -515,5 +519,5 @@ def test_local_storage_init_fails_on_multi_level_missing(tmp_path: Path):
     assert not (tmp_path / "level1").exists()
 
     # Should fail because "level1" doesn't exist
-    with pytest.raises(FileNotFoundError, match="Parent directory"):
+    with pytest.raises(StorageNotFoundError):
         LocalStorage(storage_dir=dest_dir)

@@ -1,12 +1,11 @@
-import asyncio
 import logging
 import pytest
-from datetime import datetime, timezone
 from sDownload.interfaces.models import EDownloadStatus, ChunkRange
 from sDownload.interfaces.models.params import DownloadTaskParams
 from sDownload.services.downloader_manager.download_task import DownloadTask
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
+from sDownload.exceptions import StorageNotFoundError
 
 # Configuração de log para ajudar na depuração dos testes
 logging.basicConfig(level=logging.DEBUG)
@@ -46,5 +45,5 @@ def test_download_task_initialization_with_non_existent_dir():
         dest_dir=non_existent_dir,
     )
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(StorageNotFoundError):
         DownloadTask(params)

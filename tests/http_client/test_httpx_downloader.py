@@ -153,8 +153,55 @@ async def test_download_chunk_invalid_end_range(nginx_custom):
 
 @pytest.mark.asyncio
 async def test_download_chunk_invalid_url():
+    from sDownload.exceptions import DownloadRequestError
+
     config = HttpConfigModel(timeout_connect_s=1.0, valid_ssl=False)
     downloader = HttpxDownloader(config)
     bad_url = "http://localhost:9999/nonexistent.bin"
-    with pytest.raises(Exception):
-        _ = [chunk async for chunk in downloader.download_chunk(bad_url)]
+    with pytest.raises(DownloadRequestError):
+        async for _ in downloader.download_chunk(bad_url):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_httpx_get_file_info_404(nginx_custom):
+    from sDownload.exceptions import ResourceNotFoundError
+
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+    with pytest.raises(ResourceNotFoundError):
+        await downloader.get_file_info(f"{nginx_custom['http']}/non_existent_file")
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_404(nginx_custom):
+    from sDownload.exceptions import ResourceNotFoundError
+
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/non_existent_file"
+    with pytest.raises(ResourceNotFoundError):
+        async for _ in downloader.download_chunk(url):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_httpx_get_file_info_timeout():
+    from sDownload.exceptions import DownloadTimeoutError
+
+    # Use a non-routable IP to force a timeout
+    config = HttpConfigModel(timeout_connect_s=0.001)
+    downloader = HttpxDownloader(config)
+    with pytest.raises(DownloadTimeoutError):
+        await downloader.get_file_info("http://10.255.255.1/timeout")
+
+
+@pytest.mark.asyncio
+async def test_download_chunk_timeout():
+    from sDownload.exceptions import DownloadTimeoutError
+
+    config = HttpConfigModel(timeout_connect_s=0.001)
+    downloader = HttpxDownloader(config)
+    with pytest.raises(DownloadTimeoutError):
+        async for _ in downloader.download_chunk("http://10.255.255.1/timeout"):
+            pass

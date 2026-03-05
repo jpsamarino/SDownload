@@ -4,9 +4,17 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import httpx
 from sDownload.exceptions import (
+    SDownloadError,
     FileIDMismatchError,
     DownloadRequestError,
+    DownloadTimeoutError,
     ResourceInfoError,
+    ResourceNotFoundError,
+    AccessDeniedError,
+    ServerUnavailableError,
+    NetworkError,
+    ProtocolError,
+    CommunicationError,
 )
 from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
@@ -53,6 +61,33 @@ class HttpxDownloader(DownloaderProtocol):
             cookies=self.config.cookies,
         )
 
+    def _map_httpx_error(self, exc: Exception, url: str) -> Exception:
+        """Centralized mapping of httpx errors to SDownload domain exceptions."""
+        if isinstance(exc, (ValueError, TypeError, KeyError, asyncio.CancelledError)):
+            return exc
+        if isinstance(exc, httpx.TimeoutException):
+            return DownloadTimeoutError(url, exc)
+        if isinstance(exc, httpx.HTTPStatusError):
+            code = exc.response.status_code
+            if code == 404:
+                return ResourceNotFoundError(url, exc)
+            if code in (401, 403):
+                return AccessDeniedError(url, exc)
+            if code in (429, 503, 504):
+                return ServerUnavailableError(url, exc)
+            return DownloadRequestError(url, exc)
+        if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):
+            return NetworkError(url, exc)
+        if isinstance(exc, (httpx.ProtocolError, httpx.ProxyError)):
+            return ProtocolError(url, exc)
+        if isinstance(exc, (httpx.HTTPError, IOError)):
+            return DownloadRequestError(url, exc)
+        if isinstance(exc, SDownloadError):
+            return exc
+        return CommunicationError(
+            f"Unexpected communication error: {exc}", url=url, original=exc
+        )
+
     async def download_chunk(
         self,
         url: str,
@@ -87,10 +122,8 @@ class HttpxDownloader(DownloaderProtocol):
                         # verify if the download was cancelled
                         return
 
-            except (httpx.HTTPError, IOError) as err:
-                raise DownloadRequestError(url, err) from err
-            except FileIDMismatchError:
-                raise
+            except Exception as err:
+                raise self._map_httpx_error(err, url) from err
 
     async def get_file_info(self, url: str) -> list[ResourceInfo]:
         try:
@@ -154,7 +187,6 @@ class HttpxDownloader(DownloaderProtocol):
                         )
                     ]
 
-        except httpx.HTTPError as http_err:
-            raise ResourceInfoError(url, "HTTP error", http_err) from http_err
         except Exception as err:
-            raise ResourceInfoError(url, "Unexpected error", err) from err
+            # Unify error handling
+            raise self._map_httpx_error(err, url) from err

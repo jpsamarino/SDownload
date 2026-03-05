@@ -5,11 +5,19 @@ from datetime import datetime
 import aiofiles
 import aiofiles.os
 import os
+import errno
 from sDownload.interfaces.protocols import (
     FileRangeParams,
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import StoredFileInfo
+from sDownload.exceptions import (
+    SDownloadError,
+    StorageError,
+    StorageFullError,
+    StoragePermissionError,
+    StorageNotFoundError,
+)
 
 
 class LocalStorage(FileStorageProtocol):
@@ -26,42 +34,65 @@ class LocalStorage(FileStorageProtocol):
         """
         self.storage_dir = Path(storage_dir).resolve()
         if not self.storage_dir.parent.exists():
-            raise FileNotFoundError(
-                f"Parent directory {self.storage_dir.parent} does not exist"
-            )
+            raise StorageNotFoundError(str(self.storage_dir.parent))
         self.storage_dir.mkdir(parents=False, exist_ok=True)
         self.chunk_size = chunk_size
         self.io_buffer_size = io_buffer_size
 
+    def _map_os_error(
+        self, exc: Exception, path: str | Path | None = None
+    ) -> Exception:
+        """Centralized mapping of OS/IO errors to SDownload storage exceptions."""
+        if isinstance(exc, (ValueError, TypeError, KeyError, asyncio.CancelledError)):
+            return exc
+
+        path_str = str(path) if path else None
+
+        if isinstance(exc, FileNotFoundError):
+            return StorageNotFoundError(path_str, exc)
+        if isinstance(exc, PermissionError) or (
+            isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EPERM)
+        ):
+            return StoragePermissionError(path_str, exc)
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+            return StorageFullError(path_str, exc)
+        if isinstance(exc, SDownloadError):
+            return exc
+        return StorageError(f"Storage operation failed: {exc}", original=exc)
+
     async def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         path = self.storage_dir / key
-        if not await aiofiles.os.path.exists(path):
-            raise FileNotFoundError(f"Read operation failed: {key} not found at {path}")
-        async with aiofiles.open(path, "rb") as f:
-            while True:
-                chunk = await f.read(self.chunk_size)
-                if not chunk:
-                    break
-                yield chunk
+        try:
+            if not await aiofiles.os.path.exists(path):
+                raise StorageNotFoundError(str(path))
+            async with aiofiles.open(path, "rb") as f:
+                while True:
+                    chunk = await f.read(self.chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+        except Exception as e:
+            raise self._map_os_error(e, path) from e
 
     async def save_binary_data(self, key: str, data: AsyncIterable[bytes]) -> None:
         path = self.storage_dir / key
-        async with aiofiles.open(path, "wb") as f:
-            try:
-                async for chunk in data:
-                    await asyncio.shield(f.write(chunk))
-            finally:
-                await f.flush()
-                await asyncio.to_thread(os.fsync, f.fileno())
+        try:
+            async with aiofiles.open(path, "wb") as f:
+                try:
+                    async for chunk in data:
+                        await asyncio.shield(f.write(chunk))
+                finally:
+                    await f.flush()
+                    await asyncio.to_thread(os.fsync, f.fileno())
+        except Exception as e:
+            raise self._map_os_error(e, path) from e
 
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
         try:
             await aiofiles.os.remove(path)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Delete operation failed: {key} not found at {path}"
-            ) from e
+        except Exception as e:
+            raise self._map_os_error(e, path) from e
 
     async def list_data(self) -> list[StoredFileInfo]:
         def blocking_list():
@@ -142,40 +173,43 @@ class LocalStorage(FileStorageProtocol):
                                 remaining_to_read -= len(chunk)
                                 if remaining_to_read <= 0:
                                     break
+            except Exception as e:
+                raise self._map_os_error(e, dest_path) from e
             finally:
                 await dest_file.flush()
                 await asyncio.to_thread(os.fsync, dest_file.fileno())
 
     async def shrink_file_to(self, key: str, target_size_bytes: int) -> None:
         path = self.storage_dir / key
-        if not await aiofiles.os.path.exists(path):
-            raise FileNotFoundError(
-                f"Shrink operation failed: {key} not found at {path}"
-            )
+        try:
+            if not await aiofiles.os.path.exists(path):
+                raise StorageNotFoundError(str(path))
 
-        file_stat = await aiofiles.os.stat(path)
-        current_size = file_stat.st_size
-        if target_size_bytes >= current_size:
-            return
+            file_stat = await aiofiles.os.stat(path)
+            current_size = file_stat.st_size
+            if target_size_bytes >= current_size:
+                return
 
-        def do_truncate():
-            with path.open("rb+") as f:
-                f.truncate(target_size_bytes)
-                f.flush()
-                os.fsync(f.fileno())
+            def do_truncate():
+                with path.open("rb+") as f:
+                    f.truncate(target_size_bytes)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-        await asyncio.to_thread(do_truncate)
+            await asyncio.to_thread(do_truncate)
+        except Exception as e:
+            raise self._map_os_error(e, path) from e
 
     async def move_data(self, source_key: str, dest_key: str) -> None:
         source_path = self.storage_dir / source_key
         dest_path = self.storage_dir / dest_key
+        try:
+            if not await aiofiles.os.path.exists(source_path):
+                raise StorageNotFoundError(str(source_path))
 
-        if not await aiofiles.os.path.exists(source_path):
-            raise FileNotFoundError(
-                f"Move operation failed: source {source_key} not found at {source_path}"
-            )
-
-        await aiofiles.os.replace(source_path, dest_path)
+            await aiofiles.os.replace(source_path, dest_path)
+        except Exception as e:
+            raise self._map_os_error(e, source_path) from e
 
     async def crop_file(self, key: str, start_byte: int, end_byte: int) -> None:
         target_size = end_byte - start_byte + 1
@@ -186,45 +220,48 @@ class LocalStorage(FileStorageProtocol):
                 "Parameters must be greater than 0 and start byte must be less than end byte"
             )
 
-        if not await aiofiles.os.path.exists(path):
-            raise FileNotFoundError(f"Crop operation failed: {key} not found at {path}")
+        try:
+            if not await aiofiles.os.path.exists(path):
+                raise StorageNotFoundError(str(path))
 
-        file_stat = await aiofiles.os.stat(path)
-        current_size = file_stat.st_size
+            file_stat = await aiofiles.os.stat(path)
+            current_size = file_stat.st_size
 
-        if end_byte >= current_size:
-            raise ValueError(
-                f"Crop operation failed: end_byte {end_byte} exceeds file size {current_size}"
-            )
+            if end_byte >= current_size:
+                raise ValueError(
+                    f"Crop operation failed: end_byte {end_byte} exceeds file size {current_size}"
+                )
 
-        if start_byte == 0:
-            return await self.shrink_file_to(key, target_size)
+            if start_byte == 0:
+                return await self.shrink_file_to(key, target_size)
 
-        async with aiofiles.open(path, "r+b") as f:
-            operation_buffer_size = self.io_buffer_size
-            full_blocks = target_size // operation_buffer_size
-            remainder = target_size % operation_buffer_size
+            async with aiofiles.open(path, "r+b") as f:
+                operation_buffer_size = self.io_buffer_size
+                full_blocks = target_size // operation_buffer_size
+                remainder = target_size % operation_buffer_size
 
-            write_pos = 0
-            read_pos = start_byte
+                write_pos = 0
+                read_pos = start_byte
 
-            try:
-                for _ in range(full_blocks):
-                    await f.seek(read_pos)
-                    data = await f.read(operation_buffer_size)
+                try:
+                    for _ in range(full_blocks):
+                        await f.seek(read_pos)
+                        data = await f.read(operation_buffer_size)
 
-                    await f.seek(write_pos)
-                    await f.write(data)
+                        await f.seek(write_pos)
+                        await f.write(data)
 
-                    read_pos += operation_buffer_size
-                    write_pos += operation_buffer_size
+                        read_pos += operation_buffer_size
+                        write_pos += operation_buffer_size
 
-                if remainder > 0:
-                    await f.seek(read_pos)
-                    data = await f.read(remainder)
-                    await f.seek(write_pos)
-                    await f.write(data)
-            finally:
-                await f.truncate(target_size)
-                await f.flush()
-                await asyncio.to_thread(os.fsync, f.fileno())
+                    if remainder > 0:
+                        await f.seek(read_pos)
+                        data = await f.read(remainder)
+                        await f.seek(write_pos)
+                        await f.write(data)
+                finally:
+                    await f.truncate(target_size)
+                    await f.flush()
+                    await asyncio.to_thread(os.fsync, f.fileno())
+        except Exception as e:
+            raise self._map_os_error(e, path) from e

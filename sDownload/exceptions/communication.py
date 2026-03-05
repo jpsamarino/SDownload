@@ -22,6 +22,18 @@ class DownloadRequestError(CommunicationError):
         )
 
 
+class NetworkError(DownloadRequestError):
+    """Raised when a network-level error occurs (e.g. DNS failure, connection refused)."""
+
+    pass
+
+
+class ProtocolError(DownloadRequestError):
+    """Raised when a protocol-level error occurs (e.g. proxy issue, SSL error, HTTP violation)."""
+
+    pass
+
+
 class DownloadTimeoutError(DownloadRequestError):
     """Raised when a download request times out."""
 

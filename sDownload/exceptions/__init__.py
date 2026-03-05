@@ -7,12 +7,15 @@ from .communication import (
     ResourceNotFoundError,
     AccessDeniedError,
     ServerUnavailableError,
+    NetworkError,
+    ProtocolError,
 )
 from .infrastructure import (
     InfrastructureError,
     StorageError,
     StorageFullError,
     StoragePermissionError,
+    StorageNotFoundError,
 )
 from .data import (
     DataError,
@@ -32,11 +35,14 @@ __all__ = [
     "ResourceNotFoundError",
     "AccessDeniedError",
     "ServerUnavailableError",
+    "NetworkError",
+    "ProtocolError",
     # Infrastructure
     "InfrastructureError",
     "StorageError",
     "StorageFullError",
     "StoragePermissionError",
+    "StorageNotFoundError",
     # Data
     "DataError",
     "ReconstructionError",
