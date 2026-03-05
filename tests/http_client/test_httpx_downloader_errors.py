@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from contextlib import asynccontextmanager
 from sDownload.http_client.httpx_downloader import HttpxDownloader
+from sDownload.http_client.httpx_error_mapper import map_httpx_error
 from sDownload.interfaces.models import HttpConfigModel
 from sDownload.exceptions import (
     DownloadTimeoutError,
@@ -16,7 +17,6 @@ from sDownload.exceptions import (
     CommunicationError,
     SDownloadError,
 )
-import sDownload.exceptions as sd_exc
 
 
 @pytest.fixture
@@ -32,77 +32,77 @@ def mock_response(status_code):
     return resp
 
 
-def test_map_httpx_error_logic_errors(downloader):
+def test_map_httpx_error_logic_errors():
     url = "http://test.com"
     for err_type in [ValueError, TypeError, KeyError]:
         err = err_type("test")
-        assert downloader._map_httpx_error(err, url) is err
+        assert map_httpx_error(err, url) is err
 
 
-def test_map_httpx_error_cancellation(downloader):
+def test_map_httpx_error_cancellation():
     url = "http://test.com"
     err = asyncio.CancelledError()
-    assert downloader._map_httpx_error(err, url) is err
+    assert map_httpx_error(err, url) is err
 
 
-def test_map_httpx_error_timeout(downloader):
+def test_map_httpx_error_timeout():
     url = "http://test.com"
     err = httpx.ConnectTimeout("timeout")
-    mapped = downloader._map_httpx_error(err, url)
+    mapped = map_httpx_error(err, url)
     assert isinstance(mapped, DownloadTimeoutError)
     assert mapped.original is err
 
 
-def test_map_httpx_error_status_codes(downloader):
+def test_map_httpx_error_status_codes():
     url = "http://test.com"
 
     # 404
     err = httpx.HTTPStatusError("404", request=None, response=mock_response(404))
-    assert isinstance(downloader._map_httpx_error(err, url), ResourceNotFoundError)
+    assert isinstance(map_httpx_error(err, url), ResourceNotFoundError)
 
     # 401, 403
     for code in [401, 403]:
         err = httpx.HTTPStatusError(
             str(code), request=None, response=mock_response(code)
         )
-        assert isinstance(downloader._map_httpx_error(err, url), AccessDeniedError)
+        assert isinstance(map_httpx_error(err, url), AccessDeniedError)
 
     # 429, 503, 504
     for code in [429, 503, 504]:
         err = httpx.HTTPStatusError(
             str(code), request=None, response=mock_response(code)
         )
-        assert isinstance(downloader._map_httpx_error(err, url), ServerUnavailableError)
+        assert isinstance(map_httpx_error(err, url), ServerUnavailableError)
 
     # Other status error
     err = httpx.HTTPStatusError("500", request=None, response=mock_response(500))
-    assert isinstance(downloader._map_httpx_error(err, url), DownloadRequestError)
+    assert isinstance(map_httpx_error(err, url), DownloadRequestError)
 
 
-def test_map_httpx_error_network(downloader):
+def test_map_httpx_error_network():
     url = "http://test.com"
     for err_type in [httpx.ConnectError, httpx.NetworkError]:
         err = err_type("net error")
-        assert isinstance(downloader._map_httpx_error(err, url), NetworkError)
+        assert isinstance(map_httpx_error(err, url), NetworkError)
 
 
-def test_map_httpx_error_protocol(downloader):
+def test_map_httpx_error_protocol():
     url = "http://test.com"
     for err_type in [httpx.ProtocolError, httpx.ProxyError]:
         err = err_type("proto error")
-        assert isinstance(downloader._map_httpx_error(err, url), ProtocolError)
+        assert isinstance(map_httpx_error(err, url), ProtocolError)
 
 
-def test_map_httpx_error_generic_http(downloader):
+def test_map_httpx_error_generic_http():
     url = "http://test.com"
     err = httpx.HTTPError("gen error")
-    assert isinstance(downloader._map_httpx_error(err, url), DownloadRequestError)
+    assert isinstance(map_httpx_error(err, url), DownloadRequestError)
 
 
-def test_map_httpx_error_unrecognized(downloader):
+def test_map_httpx_error_unrecognized():
     url = "http://test.com"
     err = RuntimeError("unknown")
-    mapped = downloader._map_httpx_error(err, url)
+    mapped = map_httpx_error(err, url)
     assert isinstance(mapped, CommunicationError)
     assert "Unexpected" in mapped.message
 

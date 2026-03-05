@@ -11,13 +11,8 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
 )
 from sDownload.interfaces.models import StoredFileInfo
-from sDownload.exceptions import (
-    SDownloadError,
-    StorageError,
-    StorageFullError,
-    StoragePermissionError,
-    StorageNotFoundError,
-)
+from sDownload.exceptions import StorageNotFoundError
+from .os_error_mapper import map_os_error
 
 
 class LocalStorage(FileStorageProtocol):
@@ -39,27 +34,6 @@ class LocalStorage(FileStorageProtocol):
         self.chunk_size = chunk_size
         self.io_buffer_size = io_buffer_size
 
-    def _map_os_error(
-        self, exc: Exception, path: str | Path | None = None
-    ) -> Exception:
-        """Centralized mapping of OS/IO errors to SDownload storage exceptions."""
-        if isinstance(exc, (ValueError, TypeError, KeyError, asyncio.CancelledError)):
-            return exc
-
-        path_str = str(path) if path else None
-
-        if isinstance(exc, FileNotFoundError):
-            return StorageNotFoundError(path_str, exc)
-        if isinstance(exc, PermissionError) or (
-            isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EPERM)
-        ):
-            return StoragePermissionError(path_str, exc)
-        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-            return StorageFullError(path_str, exc)
-        if isinstance(exc, SDownloadError):
-            return exc
-        return StorageError(f"Storage operation failed: {exc}", original=exc)
-
     async def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         path = self.storage_dir / key
         try:
@@ -72,7 +46,7 @@ class LocalStorage(FileStorageProtocol):
                         break
                     yield chunk
         except Exception as e:
-            raise self._map_os_error(e, path) from e
+            raise map_os_error(e, path) from e
 
     async def save_binary_data(self, key: str, data: AsyncIterable[bytes]) -> None:
         path = self.storage_dir / key
@@ -85,14 +59,14 @@ class LocalStorage(FileStorageProtocol):
                     await f.flush()
                     await asyncio.to_thread(os.fsync, f.fileno())
         except Exception as e:
-            raise self._map_os_error(e, path) from e
+            raise map_os_error(e, path) from e
 
     async def delete_data(self, key: str) -> None:
         path = self.storage_dir / key
         try:
             await aiofiles.os.remove(path)
         except Exception as e:
-            raise self._map_os_error(e, path) from e
+            raise map_os_error(e, path) from e
 
     async def list_data(self) -> list[StoredFileInfo]:
         def blocking_list():
@@ -174,7 +148,7 @@ class LocalStorage(FileStorageProtocol):
                                 if remaining_to_read <= 0:
                                     break
             except Exception as e:
-                raise self._map_os_error(e, dest_path) from e
+                raise map_os_error(e, dest_path) from e
             finally:
                 await dest_file.flush()
                 await asyncio.to_thread(os.fsync, dest_file.fileno())
@@ -198,7 +172,7 @@ class LocalStorage(FileStorageProtocol):
 
             await asyncio.to_thread(do_truncate)
         except Exception as e:
-            raise self._map_os_error(e, path) from e
+            raise map_os_error(e, path) from e
 
     async def move_data(self, source_key: str, dest_key: str) -> None:
         source_path = self.storage_dir / source_key
@@ -209,7 +183,7 @@ class LocalStorage(FileStorageProtocol):
 
             await aiofiles.os.replace(source_path, dest_path)
         except Exception as e:
-            raise self._map_os_error(e, source_path) from e
+            raise map_os_error(e, source_path) from e
 
     async def crop_file(self, key: str, start_byte: int, end_byte: int) -> None:
         target_size = end_byte - start_byte + 1
@@ -264,4 +238,4 @@ class LocalStorage(FileStorageProtocol):
                     await f.flush()
                     await asyncio.to_thread(os.fsync, f.fileno())
         except Exception as e:
-            raise self._map_os_error(e, path) from e
+            raise map_os_error(e, path) from e

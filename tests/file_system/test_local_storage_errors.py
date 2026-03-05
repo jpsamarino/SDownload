@@ -3,12 +3,12 @@ import errno
 import pytest
 from unittest.mock import MagicMock
 from sDownload.file_system.local_storage import LocalStorage
+from sDownload.file_system.os_error_mapper import map_os_error
 from sDownload.exceptions import (
     StorageNotFoundError,
     StoragePermissionError,
     StorageFullError,
     StorageError,
-    SDownloadError,
 )
 
 
@@ -17,56 +17,55 @@ def storage(tmp_path):
     return LocalStorage(storage_dir=tmp_path)
 
 
-def test_map_os_error_logic_errors(storage):
+def test_map_os_error_logic_errors():
     for err_type in [ValueError, TypeError, KeyError]:
         err = err_type("test")
-        assert storage._map_os_error(err) is err
+        assert map_os_error(err) is err
 
 
-def test_map_os_error_cancellation(storage):
+def test_map_os_error_cancellation():
     err = asyncio.CancelledError()
-    assert storage._map_os_error(err) is err
+    assert map_os_error(err) is err
 
 
-def test_map_os_error_not_found(storage):
+def test_map_os_error_not_found():
     err = FileNotFoundError("nope")
-    mapped = storage._map_os_error(err, "path/to/cat")
+    mapped = map_os_error(err, "path/to/cat")
     assert isinstance(mapped, StorageNotFoundError)
     assert "path/to/cat" in mapped.path
 
 
-def test_map_os_error_permissions(storage):
+def test_map_os_error_permissions():
     # Test PermissionError
     err = PermissionError("denied")
-    assert isinstance(storage._map_os_error(err), StoragePermissionError)
+    assert isinstance(map_os_error(err), StoragePermissionError)
 
     # Test OSError with errno
     err_eaccess = OSError(errno.EACCES, "denied")
-    assert isinstance(storage._map_os_error(err_eaccess), StoragePermissionError)
+    assert isinstance(map_os_error(err_eaccess), StoragePermissionError)
 
     err_eperm = OSError(errno.EPERM, "denied")
-    assert isinstance(storage._map_os_error(err_eperm), StoragePermissionError)
+    assert isinstance(map_os_error(err_eperm), StoragePermissionError)
 
 
-def test_map_os_error_full(storage):
+def test_map_os_error_full():
     err = OSError(errno.ENOSPC, "full")
-    assert isinstance(storage._map_os_error(err), StorageFullError)
+    assert isinstance(map_os_error(err), StorageFullError)
 
 
-def test_map_os_error_unrecognized(storage):
+def test_map_os_error_unrecognized():
     err = RuntimeError("unknown")
-    mapped = storage._map_os_error(err)
+    mapped = map_os_error(err)
     assert isinstance(mapped, StorageError)
     assert "Storage operation failed" in mapped.message
 
 
 @pytest.mark.asyncio
 async def test_storage_cancellation_flow(storage, tmp_path):
-    # This verifies that if a storage operation is cancelled, the mapper returns the CancelledError
+    # This verifies that if a storage operation is cancelled, it bubbles up correctly
     key = "cancel_test.bin"
     path = tmp_path / key
 
-    # We mock aiofiles.open to raise CancelledError when used
     import aiofiles
     from unittest.mock import patch
 
