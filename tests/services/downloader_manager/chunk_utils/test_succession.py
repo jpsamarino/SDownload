@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from sDownload.services.downloader_manager.chunk_utils.succession import (
     run_chunk_succession,
 )
+from sDownload.exceptions import ChunkSuccessionError
 from sDownload.interfaces.models import (
     ChunkRange,
     ChunkDownloadStats,
@@ -68,7 +69,7 @@ async def test_succession_predecessor_failed(mock_storage, stats_pre, stats_succ
     pre_task = asyncio.Future()
     pre_task.set_exception(ValueError("Network Error"))
 
-    with pytest.raises(RuntimeError, match="Predecessor failed: Network Error"):
+    with pytest.raises(ChunkSuccessionError, match="Predecessor .* failed"):
         await run_chunk_succession(
             mock_storage,
             stats_pre,
@@ -77,6 +78,7 @@ async def test_succession_predecessor_failed(mock_storage, stats_pre, stats_succ
         )
 
     assert stats_succ.status == EDownloadStatus.ERROR
+    assert isinstance(stats_succ.last_error, ChunkSuccessionError)
 
 
 @pytest.mark.asyncio
@@ -89,7 +91,7 @@ async def test_succession_insufficient_data(mock_storage, stats_pre, stats_succ)
     pre_task = asyncio.Future()
     pre_task.set_result(None)
 
-    with pytest.raises(RuntimeError, match="Insufficient data"):
+    with pytest.raises(ChunkSuccessionError, match="Insufficient data"):
         await run_chunk_succession(
             mock_storage,
             stats_pre,
@@ -98,6 +100,7 @@ async def test_succession_insufficient_data(mock_storage, stats_pre, stats_succ)
         )
 
     assert stats_succ.status == EDownloadStatus.ERROR
+    assert isinstance(stats_succ.last_error, ChunkSuccessionError)
 
 
 @pytest.mark.asyncio
@@ -129,6 +132,7 @@ async def test_succession_storage_error(mock_storage, stats_pre, stats_succ):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
 
     assert stats_succ.status == EDownloadStatus.ERROR
+    assert isinstance(stats_succ.last_error, IOError)
 
 
 @pytest.mark.asyncio
@@ -156,6 +160,9 @@ async def test_succession_invalid_successor_state(mock_storage, stats_pre, stats
         RuntimeError, match="Successor is not in AWAITING_SUCCESSION state"
     ):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
+    
+    # Note: stats_succ.status is NOT changed here because the error happens 
+    # before the try/except block that calls set_error
 
 
 @pytest.mark.asyncio
@@ -167,10 +174,11 @@ async def test_succession_predecessor_zero_bytes(mock_storage, stats_pre, stats_
     pre_task = asyncio.Future()
     pre_task.set_exception(asyncio.CancelledError())
 
-    with pytest.raises(RuntimeError, match="provided no data"):
+    with pytest.raises(ChunkSuccessionError, match="provided no data"):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, pre_task)
 
     assert stats_succ.status == EDownloadStatus.ERROR
+    assert isinstance(stats_succ.last_error, ChunkSuccessionError)
     # No file operations should have been called
     mock_storage.crop_file.assert_not_called()
     mock_storage.move_data.assert_not_called()
@@ -191,3 +199,4 @@ async def test_succession_predecessor_file_missing(mock_storage, stats_pre, stat
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, pre_task)
 
     assert stats_succ.status == EDownloadStatus.ERROR
+    assert isinstance(stats_succ.last_error, FileNotFoundError)

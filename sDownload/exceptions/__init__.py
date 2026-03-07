@@ -22,6 +22,7 @@ from .data import (
     ReconstructionError,
     FileIDMismatchError,
     IntegrityError,
+    ChunkSuccessionError,
 )
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "ReconstructionError",
     "FileIDMismatchError",
     "IntegrityError",
+    "ChunkSuccessionError",
 ]

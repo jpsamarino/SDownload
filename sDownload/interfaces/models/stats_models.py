@@ -15,7 +15,7 @@ class EDownloadStatus(str, Enum):
     ERROR = "error"
 
 
-@dataclass
+@dataclass(slots=True)
 class ChunkDownloadStats:
     chunk_file_name: str
     range: ChunkRange
@@ -30,6 +30,8 @@ class ChunkDownloadStats:
     target_speed_bps: int | None = None  # use None for unlimited
     limit_qt_bytes: int = field(default=0, init=False)
     _on_limit: Callable[[], None] | None = field(default=None, init=False)
+    last_error: Exception | None = field(default=None, init=False)
+    add_qt_bytes_downloaded: Callable[[int], None] = field(init=False)
 
     def __post_init__(self):
         self.add_qt_bytes_downloaded = self._add_no_limit
@@ -62,7 +64,15 @@ class ChunkDownloadStats:
         self.add_qt_bytes_downloaded = self._add_no_limit
 
     def set_status(self, status: EDownloadStatus):
+        if status == EDownloadStatus.ERROR:
+            raise ValueError(
+                "Do not set EDownloadStatus.ERROR directly. Use set_error(exc) instead."
+            )
         self.status = status
+
+    def set_error(self, exc: Exception):
+        self.status = EDownloadStatus.ERROR
+        self.last_error = exc
 
     def update(self):
         qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update

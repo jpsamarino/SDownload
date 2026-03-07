@@ -12,19 +12,24 @@ from sDownload.interfaces.models import (
 )
 
 
+class MockStats(ChunkDownloadStats):
+    __slots__ = ()
+
+    def update(self):
+        """No-op update for tests to prevent speed_bps reset."""
+        pass
+
+
 @pytest.fixture
 def stats_factory():
     def _create(start, end, status=EDownloadStatus.DOWNLOADING):
-        s = ChunkDownloadStats(
+        s = MockStats(
             chunk_file_name=f"chunk_{start}_{end}.bin",
             range=ChunkRange(start, end),
             file_size=end - start + 1 if end is not None else None,
         )
         s.set_status(status)
         s.speed_bps = 1024 * 1024  # 1 MB/s default for test
-        s.update = (
-            MagicMock()
-        )  # Mock update to prevent it from resetting speed_bps in tight loops
         return s
 
     return _create

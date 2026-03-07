@@ -41,7 +41,7 @@ async def download_chunk_supervised(
         await storage.save_binary_data(stats.chunk_file_name, tracked)
 
         if stats.file_size is not None and stats.bytes_downloaded != stats.file_size:
-            raise IOError(
+            raise IOError(  # change
                 f"Chunk size error: expected {stats.file_size} bytes, "
                 f"got {stats.bytes_downloaded} bytes"
             )
@@ -63,7 +63,7 @@ async def download_chunk_supervised(
         raise
 
     except Exception as e:
-        stats.set_status(EDownloadStatus.ERROR)
+        stats.set_error(e)
         logger.warning("[%s] download failed: %s", stats.chunk_file_name, e)
         raise
     finally:

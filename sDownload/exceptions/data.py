@@ -42,3 +42,10 @@ class IntegrityError(DataError):
         original: Exception | None = None,
     ):
         super().__init__(message, original=original)
+
+
+class ChunkSuccessionError(DataError):
+    """Raised when chunk succession (resizing) fails due to predecessor issues."""
+
+    def __init__(self, message: str, original: Exception | None = None):
+        super().__init__(message, original=original)

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
 from sDownload.interfaces.protocols import FileStorageProtocol
+from sDownload.exceptions import ChunkSuccessionError
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +44,28 @@ async def run_chunk_succession(
         limit = stats_predecessor.limit_qt_bytes
 
         if predecessor_error:
-            stats_successor.set_status(EDownloadStatus.ERROR)
-            raise RuntimeError(
-                f"Predecessor failed: {predecessor_error}"
-            ) from predecessor_error
+            err = ChunkSuccessionError(
+                f"Predecessor {range_predecessor} failed: {predecessor_error}",
+                original=predecessor_error,
+            )
+            stats_successor.set_error(err)
+            raise err from predecessor_error
 
         if limit and stats_predecessor.bytes_downloaded < limit:
-            stats_successor.set_status(EDownloadStatus.ERROR)
-            raise RuntimeError(
-                f"Insufficient data: {stats_predecessor.bytes_downloaded}/{limit} bytes"
+            err = ChunkSuccessionError(
+                f"Insufficient data from {range_predecessor}: "
+                f"{stats_predecessor.bytes_downloaded}/{limit} bytes"
             )
+            stats_successor.set_error(err)
+            raise err
 
         if stats_predecessor.bytes_downloaded <= 0:
-            raise RuntimeError(
+            err = ChunkSuccessionError(
                 f"Predecessor {range_predecessor} provided no data for succession to {range_successor}. "
                 "Succession cannot result in a COMPLETED chunk without data."
             )
+            stats_successor.set_error(err)
+            raise err
 
         start_crop = range_successor.start - range_predecessor.start
         end_crop = (
@@ -95,6 +102,6 @@ async def run_chunk_succession(
 
     except Exception as e:
         if stats_successor.status != EDownloadStatus.ERROR:
-            stats_successor.set_status(EDownloadStatus.ERROR)
+            stats_successor.set_error(e)
         logger.warning("Succession failed: %s", e)
         raise
