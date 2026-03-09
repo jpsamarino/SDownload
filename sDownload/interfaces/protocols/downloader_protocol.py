@@ -35,9 +35,9 @@ class DownloaderProtocol(Protocol):
         """
         ...
 
-    async def get_file_info(self, url: str) -> list[ResourceInfo]:
+    async def get_file_info(self, url: str) -> ResourceInfo:
         """
-        Retrieve metadata information about a file from a specified URL.
+        Retrieve metadata information about a single file from a specified URL.
 
         This method fetches details about a file, such as its name, size, content type,
         and other relevant information, without downloading the actual file.
@@ -51,5 +51,25 @@ class DownloaderProtocol(Protocol):
 
         Raises:
             FileInfoRetrievalError: If there is an error retrieving the file information.
+        """
+        ...
+
+    async def list_resources(
+        self,
+        url: str,
+        pattern: str | None = None,  # why pattern is str and not re.Pattern?
+        level: int = 1,
+    ) -> AsyncGenerator[ResourceInfo, None]:
+        """
+        Recursively discover and list resources from a specified URL.
+
+        Args:
+            url (str): The URL to list resources from.
+            pattern (str, optional): A regex pattern to filter discovered resources by name.
+            level (int): Maximum recursion depth for sub-routes. Minimum is 1.
+
+        Yields:
+            AsyncGenerator[ResourceInfo, None]: An asynchronous generator yielding
+            `ResourceInfo` instances.
         """
         ...

@@ -12,7 +12,6 @@ from sDownload.interfaces.models import (
     ChunkDownloadStats,
     DownloadStats,
     EDownloadStatus,
-    AnyStrategyAction,
 )
 from sDownload.http_client import HttpxDownloader
 from sDownload.interfaces.models.params import DownloadTaskParams

@@ -6,8 +6,8 @@ RUN apk add --no-cache coreutils bash openssl
 
 # Create directories for files, JSON, and SSL
 RUN mkdir -p /usr/share/nginx/html/files \
-    /usr/share/nginx/html/json \
-    /etc/nginx/ssl
+  /usr/share/nginx/html/json \
+  /etc/nginx/ssl
 
 # Remove default site to avoid conflicts
 RUN rm -f /etc/nginx/conf.d/default.conf
@@ -16,10 +16,10 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 COPY tests/nginx_tests_config/nginx.conf /etc/nginx/nginx.conf
 COPY tests/nginx_tests_config/conf.d/    /etc/nginx/conf.d/
 
-# Generate random binary files from 100KB up to 500MB
+# Generate random binary files from 100KB up to 10MB
 RUN set -eux; \
-  for size in 100k 1M 5M 10M 50M 100M 200M 300M 400M 500M; do \
-    dd if=/dev/urandom of="/usr/share/nginx/html/files/file_${size}.bin" bs=${size} count=1 status=none; \
+  for size in 10k 100k 1M 10M; do \
+  dd if=/dev/urandom of="/usr/share/nginx/html/files/file_${size}.bin" bs=${size} count=1 status=none; \
   done
 
 # Generate a valid self-signed certificate (CN=localhost, 1 year)
@@ -35,7 +35,10 @@ COPY tests/nginx_tests_config/ssl/expired.crt /etc/nginx/ssl/expired.crt
 COPY tests/nginx_tests_config/ssl/expired.key /etc/nginx/ssl/expired.key
 
 # Generate a sample JSON document (static for deterministic build)
-RUN echo '{"message":"hello","id":123,"random":42}' > /usr/share/nginx/html/json/data.json
+RUN echo '{"message":"hello","id":123,"random":42, "links": ["http://localhost/default/file_100k.bin", "http://localhost/no_resume/file_1M.bin"]}' > /usr/share/nginx/html/json/data.json
+
+# Copy static HTML pages for recursive listing tests
+COPY tests/nginx_tests_config/www/ /usr/share/nginx/html/
 
 # Expose HTTP and HTTPS ports
 EXPOSE 80 443 8443

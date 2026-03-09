@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDownload | Discovery Module</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="badge">Teste 1</div>
+        <h1>Resource Discovery</h1>
+        <p>This dashboard serves as the main entry point for testing the <code>list_resources</code> functionality.</p>
+        
+        <div class="resource-grid">
+            <a href="level1/" class="card">
+                <div class="card-icon">📂</div>
+                <div class="card-title">Level 1 Subdir</div>
+                <div class="card-desc">Deeply nested folders and complex linking structures.</div>
+            </a>
+            
+            <a href="/default/file_100k.bin" class="card">
+                <div class="card-icon">📄</div>
+                <div class="card-title">Direct Binary</div>
+                <div class="card-desc">Standard 100KB binary file for integrity testing.</div>
+            </a>
+
+            <a href="/json-data" class="card">
+                <div class="card-icon">🔗</div>
+                <div class="card-title">JSON Discovery</div>
+                <div class="card-desc">Discover links embedded inside JSON structures.</div>
+            </a>
+        </div>
+
+        <footer>
+            SDownload Agent System &bull; Nginx Test Server
+        </footer>
+    </div>
+</body>
+</html>

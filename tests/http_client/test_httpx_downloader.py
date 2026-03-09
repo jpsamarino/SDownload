@@ -21,10 +21,9 @@ from sDownload.interfaces.models import HttpConfigModel
 async def test_httpx_get_file_info_common_case(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
+    result = await downloader.get_file_info(
         f"{nginx_custom['http']}/default/file_100k.bin"
     )
-    result = result_list[0]
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
@@ -34,12 +33,11 @@ async def test_httpx_get_file_info_common_case(nginx_custom):
 async def test_httpx_get_file_info_without_range_support(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
-        f"{nginx_custom['http']}/no_resume/file_100M.bin"
+    result = await downloader.get_file_info(
+        f"{nginx_custom['http']}/no_resume/file_10M.bin"
     )
-    result = result_list[0]
-    assert result.file_name == "file_100M.bin"
-    assert result.file_size == 104857600
+    assert result.file_name == "file_10M.bin"
+    assert result.file_size == 10485760
     assert result.server_accept_ranges is False
 
 
@@ -55,8 +53,7 @@ async def test_httpx_get_file_info_with_wrong_url(nginx_custom):
 async def test_httpx_get_file_info_json_and_data_returns(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/json-data")
-    result = result_list[0]
+    result = await downloader.get_file_info(f"{nginx_custom['http']}/json-data")
     assert result.file_name == "json_data.bin"
     assert result.server_accept_ranges is False
 
@@ -65,8 +62,7 @@ async def test_httpx_get_file_info_json_and_data_returns(nginx_custom):
 async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(f"{nginx_custom['http']}/no_filename")
-    result = result_list[0]
+    result = await downloader.get_file_info(f"{nginx_custom['http']}/no_filename")
     assert result.file_name == "no_filename.bin"
     assert result.file_size == 1048576
 
@@ -75,10 +71,9 @@ async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
 async def test_httpx_get_file_info_https_without_valid_ssl(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
     downloader = HttpxDownloader(config)
-    result_list = await downloader.get_file_info(
+    result = await downloader.get_file_info(
         f"{nginx_custom['https']}/default/file_100k.bin"
     )
-    result = result_list[0]
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
@@ -205,3 +200,52 @@ async def test_download_chunk_timeout():
     with pytest.raises(DownloadTimeoutError):
         async for _ in downloader.download_chunk("http://10.255.255.1/timeout"):
             pass
+
+
+@pytest.mark.asyncio
+async def test_httpx_list_resources_html_scraping(nginx_custom):
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+
+    # Test discovery page (Level 0/1)
+    url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/"
+    resources = [r async for r in downloader.list_resources(url, level=1)]
+
+    # Should find file_100k.bin and the level1 directory
+    filenames = [r.file_name for r in resources]
+    assert "file_100k.bin" in filenames
+    assert any("level1" in r.download_url for r in resources)
+
+
+@pytest.mark.asyncio
+async def test_httpx_list_resources_recursive(nginx_custom):
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+
+    # Test recursive depth Level 2
+    url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
+    resources = [r async for r in downloader.list_resources(url, level=2)]
+
+    # Level 1 should have: relative_file.txt, file_100k.bin (absolute link)
+    # Level 2 should have: leaf.txt, file_1M.bin (absolute link)
+    filenames = [r.file_name for r in resources]
+    assert "relative_file.txt" in filenames
+    assert "file_100k.bin" in filenames
+    assert "leaf.txt" in filenames
+    assert "file_1M.bin" in filenames
+
+
+@pytest.mark.asyncio
+async def test_httpx_list_resources_with_regex(nginx_custom):
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+
+    url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
+    # Only find files with "leaf" in name
+    resources = [
+        r async for r in downloader.list_resources(url, pattern=r"leaf", level=2)
+    ]
+
+    filenames = [r.file_name for r in resources]
+    assert "leaf.txt" in filenames
+    assert len(filenames) == 1

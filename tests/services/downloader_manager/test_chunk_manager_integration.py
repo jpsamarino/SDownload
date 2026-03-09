@@ -32,10 +32,9 @@ def setup_downloader_and_config(nginx_custom):
         path = "limited_speed" if limit_speed else "default"
         config = HttpConfigModel(timeout_connect_s=20.0)
         downloader = HttpxDownloader(config)
-        result_list = await downloader.get_file_info(
+        result = await downloader.get_file_info(
             f"{nginx_custom['http']}/{path}/{file_name}"
         )
-        result = result_list[0]
 
         chunk_params = ChunkManagerParams(
             file_name=result.file_name,

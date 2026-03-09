@@ -1,4 +1,7 @@
 import asyncio
+import re
+import logging
+from urllib.parse import urljoin, urlparse
 from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -11,6 +14,9 @@ from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 from .httpx_error_mapper import map_httpx_error
+
+
+logger = logging.getLogger(__name__)
 
 
 class HttpxDownloader(DownloaderProtocol):
@@ -83,7 +89,7 @@ class HttpxDownloader(DownloaderProtocol):
                         async for chunk in response.aiter_bytes():
                             yield chunk
                     except GeneratorExit:
-                        # verify if the download was cancelled
+                        logger.debug(f"Download cancelled for {url}")
                         return
 
             except Exception as err:
@@ -133,23 +139,108 @@ class HttpxDownloader(DownloaderProtocol):
                             else datetime.now(timezone.utc)
                         )
                     except Exception as date_err:
+                        logger.warning(f"FAILED on get_file_info for {url}: {date_err}")
                         raise ResourceInfoError(
                             url, "Invalid Last-Modified header", date_err
                         ) from date_err
 
-                    return [
-                        ResourceInfo(
-                            file_name=file_name,
-                            file_dir=".",
-                            file_size=full_size,
-                            file_id=file_id,
-                            download_url=str(response.url),
-                            transmission_protocol=response.url.scheme,
-                            server_accept_ranges=resumable,
-                            file_created_at=date_created,
-                            protocol_data=dict(headers),
-                        )
-                    ]
+                    return ResourceInfo(
+                        file_name=file_name,
+                        file_dir=".",
+                        file_size=full_size,
+                        file_id=file_id,
+                        download_url=str(response.url),
+                        transmission_protocol=response.url.scheme,
+                        server_accept_ranges=resumable,
+                        file_created_at=date_created,
+                        protocol_data=dict(headers),
+                    )
 
         except Exception as err:
             raise map_httpx_error(err, url) from err
+
+    async def list_resources(
+        self,
+        url: str,
+        pattern: str | None = None,
+        level: int = 1,
+    ) -> AsyncGenerator[ResourceInfo, None]:
+        """
+        List resources using regex-based scraping for HTML/JSON.
+        """
+        if level < 1:
+            raise ValueError("level must be greater than 0")
+
+        regex = re.compile(pattern) if pattern else None
+        seen_urls = {url}
+        queue = [(url, 1)]
+
+        while queue:
+            current_url, current_level = queue.pop(0)
+
+            try:
+                async with await self._get_client() as client:
+                    async with client.stream("GET", current_url) as response:
+                        response.raise_for_status()
+                        content_type = response.headers.get("Content-Type", "")
+
+                        body = ""
+                        async for chunk in response.aiter_text():
+                            body += chunk
+                            if len(body) > 1024 * 1024:  # 1MB limit for scraping
+                                break
+
+                        # 1. Try to find links in HTML <a href="...">
+                        if "text/html" in content_type:
+                            links = re.findall(
+                                r'href=["\'](.[^"\']+)["\']', body, re.IGNORECASE
+                            )
+                            for link in links:
+                                absolute_url = urljoin(current_url, link)
+                                if absolute_url in seen_urls:
+                                    continue
+
+                                filename = url_to_file_name(absolute_url)
+                                is_dir = absolute_url.endswith("/")
+
+                                # Recursion check: if it's a directory and we haven't reached depth limit
+                                if is_dir and current_level < level:
+                                    queue.append((absolute_url, current_level + 1))
+                                    seen_urls.add(absolute_url)
+
+                                # Yielding check: only yield if pattern matches (or no pattern)
+                                if not regex or regex.search(filename):
+                                    try:
+                                        info = await self.get_file_info(absolute_url)
+                                        yield info
+                                        seen_urls.add(absolute_url)
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"FAILED on get_file_info for {absolute_url}: {e}"
+                                        )
+                                        continue
+
+                        # 2. Try to find links in JSON values
+                        elif "application/json" in content_type:
+                            # Search for anything that looks like a URL in string values
+                            links = re.findall(r"\"https?://[^\"]+\"", body)
+                            for link in links:
+                                absolute_url = link.strip('"')
+                                if absolute_url in seen_urls:
+                                    continue
+
+                                filename = url_to_file_name(absolute_url)
+                                if not regex or regex.search(filename):
+                                    try:
+                                        info = await self.get_file_info(absolute_url)
+                                        yield info
+                                        seen_urls.add(absolute_url)
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"FAILED on get_file_info for {absolute_url}: {e}"
+                                        )
+                                        continue
+
+            except Exception as e:
+                logger.warning(f"Failed to list resources from {current_url}: {e}")
+                continue
