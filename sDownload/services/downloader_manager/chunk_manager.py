@@ -414,8 +414,9 @@ class ChunkManager:
                 final_filename=self._params.file_name,
                 total_file_size=self._params.file_size,
             )
-        except ReconstructionError as e:
-            raise RuntimeError(f"Merge failed: {e}") from e
+        except ReconstructionError:
+            logger.error("Failed to reconstruct file.")
+            raise
 
         if cleanup:
             logger.info("Cleaning up ChunkManager after merge...")

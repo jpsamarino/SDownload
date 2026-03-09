@@ -6,6 +6,7 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
     ThrottlerProtocol,
 )
+from sDownload.exceptions import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ async def download_chunk_supervised(
         await storage.save_binary_data(stats.chunk_file_name, tracked)
 
         if stats.file_size is not None and stats.bytes_downloaded != stats.file_size:
-            raise IOError(  # change
+            raise IntegrityError(
                 f"Chunk size error: expected {stats.file_size} bytes, "
                 f"got {stats.bytes_downloaded} bytes"
             )

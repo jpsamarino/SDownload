@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from sDownload.services.downloader_manager.chunk_utils.downloader import (
     download_chunk_supervised,
 )
+from sDownload.exceptions import IntegrityError
 from sDownload.services.downloader_manager.throttling import get_default_throttler
 from sDownload.interfaces.models import (
     ChunkRange,
@@ -81,7 +82,7 @@ async def test_download_chunk_size_mismatch(
     data = [b"1234567890"]
     mock_downloader.download_chunk.return_value = async_gen(data)
 
-    with pytest.raises(IOError, match="Chunk size error"):
+    with pytest.raises(IntegrityError, match="Chunk size error"):
         await download_chunk_supervised(
             mock_downloader, mock_storage, stats, download_url, throttler
         )

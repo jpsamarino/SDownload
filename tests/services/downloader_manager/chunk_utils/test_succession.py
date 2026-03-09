@@ -157,7 +157,7 @@ async def test_succession_invalid_successor_state(mock_storage, stats_pre, stats
     stats_succ.set_status(EDownloadStatus.PENDING)
 
     with pytest.raises(
-        RuntimeError, match="Successor is not in AWAITING_SUCCESSION state"
+        ValueError, match="Successor is not in AWAITING_SUCCESSION state"
     ):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
     

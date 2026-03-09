@@ -1,5 +1,6 @@
 import pytest
 from sDownload.utils import calculate_optimal_coverage
+from sDownload.exceptions import ReconstructionError
 from sDownload.interfaces.models import ChunkRange, ChunkFragment
 
 
@@ -65,7 +66,7 @@ def test_resolve_complex_shortest_path():
 def test_resolve_gap_raises_error():
     # C1: 0-10, C2: 12-20. Gap at 11.
     chunks = [ChunkRange(0, 10), ChunkRange(12, 20)]
-    with pytest.raises(RuntimeError, match="Gap detected"):
+    with pytest.raises(ReconstructionError, match="Gap detected"):
         calculate_optimal_coverage(chunks, file_size=21)
 
 
@@ -82,13 +83,13 @@ def test_resolve_no_file_size_with_infinite_reach():
 
 def test_resolve_incomplete_coverage_raises_error():
     chunks = [ChunkRange(0, 100)]
-    with pytest.raises(RuntimeError, match="Gap detected"):
+    with pytest.raises(ReconstructionError, match="Gap detected"):
         calculate_optimal_coverage(chunks, file_size=200)
 
 
 def test_resolve_first_chunk_not_at_zero():
     chunks = [ChunkRange(10, 100)]
-    with pytest.raises(RuntimeError, match="Gap at the beginning"):
+    with pytest.raises(ReconstructionError, match="Gap at the beginning"):
         calculate_optimal_coverage(chunks, file_size=101)
 
 
