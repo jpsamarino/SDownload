@@ -16,7 +16,7 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
     ThrottlerProtocol,
 )
-from sDownload.exceptions import ReconstructionError
+from sDownload.exceptions import ReconstructionError, LifecycleError
 from sDownload.services.downloader_manager.throttling import get_default_throttler
 from sDownload.services.downloader_manager.chunk_utils import (
     monitor_download_progress,
@@ -202,8 +202,8 @@ class ChunkManager:
         if current_range not in self._chunks_stats:
             if current_range not in self._chunks_tasks:
                 raise KeyError(f"Range {current_range} not found in active chunks")
-            raise ValueError(
-                f"Is necessary wait for range {current_range} init to resize"
+            raise LifecycleError(
+                f"Range {current_range} is still initializing. Wait for init before resizing."
             )
 
         if new_range == current_range:

@@ -1,6 +1,5 @@
 from collections import deque
 from sDownload.interfaces.models import ChunkRange, ChunkFragment
-from sDownload.exceptions import ReconstructionError
 
 
 def calculate_ranges(
@@ -96,7 +95,7 @@ def calculate_optimal_coverage(
         List of ChunkFragment with the range and how many bytes to read from it.
     """
     if not chunks:
-        raise ReconstructionError("No chunks provided for merge resolution.")
+        raise ValueError("No chunks provided for merge resolution.")
 
     # Helper: get the furthest byte a chunk can cover
     def get_reach(chunk: ChunkRange) -> float:
@@ -115,7 +114,7 @@ def calculate_optimal_coverage(
     # STEP 2: Validate that we have a chunk starting at byte 0
     start_positions = sorted(best_chunk_at.keys())
     if start_positions[0] > 0:
-        raise ReconstructionError(
+        raise ValueError(
             f"Gap at the beginning: first chunk starts at {start_positions[0]}"
         )
 
@@ -179,4 +178,4 @@ def calculate_optimal_coverage(
 
             queue.append((next_pos, new_path))
 
-    raise ReconstructionError("Gap detected: unable to cover the required file range.")
+    raise ValueError("Gap detected: unable to cover the required file range.")

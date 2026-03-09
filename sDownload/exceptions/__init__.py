@@ -1,4 +1,4 @@
-from .base import SDownloadError
+from .base import SDownloadError, LifecycleError
 from .communication import (
     CommunicationError,
     DownloadRequestError,
@@ -28,6 +28,7 @@ from .data import (
 __all__ = [
     # Base
     "SDownloadError",
+    "LifecycleError",
     # Communication
     "CommunicationError",
     "DownloadRequestError",
