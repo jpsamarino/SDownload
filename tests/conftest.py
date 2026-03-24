@@ -55,3 +55,28 @@ async def webdav_server():
     yield url
 
     container.stop()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def webdav_public_server():
+    """
+    Fixture that starts a Public WebDAV container (no auth).
+    """
+    port = random.randint(9501, 9999)
+
+    # Reuse the same image but allow anonymous methods
+    container = (
+        DockerContainer("sdownload_test_webdav")
+        .with_bind_ports(80, port)
+        .with_env("ANONYMOUS_METHODS", "GET,PROPFIND,OPTIONS,REPORT")
+    )
+
+    container.start()
+    await asyncio.sleep(2)
+
+    host = container.get_container_host_ip()
+    url = f"http://{host}:{port}"
+
+    yield url
+
+    container.stop()
