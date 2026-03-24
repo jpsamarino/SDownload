@@ -32,9 +32,16 @@ async def webdav_server():
     Fixture that starts a WebDAV container (bytemark/webdav) for testing.
     """
     port = find_available_port(9000, 9500)
-
-    # Note: sdownload_test_webdav image needs to be built first
-    container = DockerContainer("sdownload_test_webdav").with_bind_ports(80, port)
+    user = "admin"
+    password = "admin"
+    # Set credentials via environment variables
+    container = (
+        DockerContainer("sdownload_test_webdav")
+        .with_bind_ports(80, port)
+        .with_env("USER", user)
+        .with_env("PASSWORD", password)
+        .with_env("AUTH_TYPE", "Basic")
+    )
 
     container.start()
     # Give it a moment to initialize
@@ -45,7 +52,7 @@ async def webdav_server():
 
     yield {
         "url": url,
-        "auth": ("admin", "admin"),
+        "auth": (user, password),
     }
 
     container.stop()
