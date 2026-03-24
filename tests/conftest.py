@@ -1,5 +1,4 @@
 import asyncio
-import random
 import pytest_asyncio
 from testcontainers.core.container import DockerContainer
 from sDownload.utils import find_available_port
@@ -44,7 +43,10 @@ async def webdav_server():
     host = container.get_container_host_ip()
     url = f"http://{host}:{port}"
 
-    yield url
+    yield {
+        "url": url,
+        "auth": ("admin", "admin"),
+    }
 
     container.stop()
 
