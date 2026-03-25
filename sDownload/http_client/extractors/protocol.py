@@ -12,7 +12,7 @@ class ResourceExtractorProtocol(Protocol):
     """
 
     async def extract(
-        self, url: str, client: httpx.AsyncClient
+        self, url: str, client: httpx.AsyncClient, max_scrape_size: int = 1048576
     ) -> AsyncGenerator[str, None]:
         """
         Extract absolute URLs from the resource at the given URL.

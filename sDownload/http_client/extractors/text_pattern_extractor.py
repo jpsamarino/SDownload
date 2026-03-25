@@ -6,13 +6,13 @@ import httpx
 from .protocol import ResourceExtractorProtocol
 
 
-class HtmlExtractor(ResourceExtractorProtocol):
+class TextPatternExtractor(ResourceExtractorProtocol):
     """
     Extractor for HTML/JS/CSS resources.
-    Uses resilient Regular Expressions to find links in messy HTML or embedded JavaScript.
-
+    Uses resilient Regular Expressions to find links in messy text or embedded JavaScript.
+    
     Responsibilities:
-    - Safely download content up to a 1MB limit.
+    - Safely download content up to the max_scrape_size limit.
     - Extract anything that looks like a URL or file path in common attributes.
     - Extract any absolute URL found in the text.
     - Resolve relative URLs to absolute URLs based on the origin URL.
@@ -26,10 +26,8 @@ class HtmlExtractor(ResourceExtractorProtocol):
     _ABS_URL_REGEX = re.compile(r'(?i)(["\'])(https?://[^\s"\'<>]+)\1')
 
     async def extract(
-        self, url: str, client: httpx.AsyncClient
+        self, url: str, client: httpx.AsyncClient, max_scrape_size: int = 1048576
     ) -> AsyncGenerator[str, None]:
-
-        MAX_SCRAPE_SIZE = 1024 * 1024
 
         try:
             async with client.stream("GET", url, follow_redirects=True) as response:
@@ -54,7 +52,7 @@ class HtmlExtractor(ResourceExtractorProtocol):
                 body = ""
                 async for chunk in response.aiter_text():
                     body += chunk
-                    if len(body) >= MAX_SCRAPE_SIZE:
+                    if len(body) >= max_scrape_size:
                         break
 
                 seen_links = set()
