@@ -1,22 +1,13 @@
 import re
 from urllib.parse import urljoin
-from typing import AsyncGenerator
-import httpx
-
-from .protocol import ResourceExtractorProtocol
+from .protocol import ResourceExtractorProtocol, ExtractedLink
 
 
 class TextPatternExtractor(ResourceExtractorProtocol):
     """
-    Extractor for HTML/JS/CSS resources.
-    Uses resilient Regular Expressions to find links in messy text or embedded JavaScript.
-    
-    Responsibilities:
-    - Safely download content up to the max_scrape_size limit.
-    - Extract anything that looks like a URL or file path in common attributes.
-    - Extract any absolute URL found in the text.
-    - Resolve relative URLs to absolute URLs based on the origin URL.
-    - Yield unique absolute URLs.
+    Parser for HTML/JS/CSS resources.
+    Uses resilient Regular Expressions to find links in messy text.
+    Strictly synchronous and stateless.
     """
 
     _ATTR_REGEX = re.compile(
@@ -25,53 +16,24 @@ class TextPatternExtractor(ResourceExtractorProtocol):
 
     _ABS_URL_REGEX = re.compile(r'(?i)(["\'])(https?://[^\s"\'<>]+)\1')
 
-    async def extract(
-        self, url: str, client: httpx.AsyncClient, max_scrape_size: int = 1048576
-    ) -> AsyncGenerator[str, None]:
+    def extract(self, content: str, base_url: str) -> list[ExtractedLink]:
+        seen_links = set()
+        final_links = []
 
-        try:
-            async with client.stream("GET", url, follow_redirects=True) as response:
-                response.raise_for_status()
+        for match in self._ATTR_REGEX.finditer(content):
+            raw_link = match.group(2).strip()
+            if not raw_link:
+                continue
 
-                content_type = response.headers.get("Content-Type", "").lower()
-                is_text_based = any(
-                    t in content_type
-                    for t in [
-                        "text/",
-                        "application/json",
-                        "application/javascript",
-                        "application/x-javascript",
-                        "application/xml",
-                        "application/xhtml+xml",
-                    ]
-                )
+            absolute_url = urljoin(base_url, raw_link)
+            if absolute_url not in seen_links:
+                seen_links.add(absolute_url)
+                final_links.append(ExtractedLink(url=absolute_url, is_dir=None))
 
-                if content_type and not is_text_based:
-                    return
+        for match in self._ABS_URL_REGEX.finditer(content):
+            raw_link = match.group(2).strip()
+            if raw_link not in seen_links:
+                seen_links.add(raw_link)
+                final_links.append(ExtractedLink(url=raw_link, is_dir=None))
 
-                body = ""
-                async for chunk in response.aiter_text():
-                    body += chunk
-                    if len(body) >= max_scrape_size:
-                        break
-
-                seen_links = set()
-
-                for match in self._ATTR_REGEX.finditer(body):
-                    raw_link = match.group(2).strip()
-                    if not raw_link:
-                        continue
-
-                    absolute_url = urljoin(url, raw_link)
-                    if absolute_url not in seen_links:
-                        seen_links.add(absolute_url)
-                        yield absolute_url
-
-                for match in self._ABS_URL_REGEX.finditer(body):
-                    raw_link = match.group(2).strip()
-                    if raw_link not in seen_links:
-                        seen_links.add(raw_link)
-                        yield raw_link
-
-        except Exception as e:
-            raise e
+        return final_links

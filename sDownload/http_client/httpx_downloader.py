@@ -14,6 +14,7 @@ from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 from .httpx_error_mapper import map_httpx_error
+from .resource_explorer import explore_resource
 
 
 logger = logging.getLogger(__name__)
@@ -164,9 +165,11 @@ class HttpxDownloader(DownloaderProtocol):
         url: str,
         pattern: str | None = None,
         level: int = 1,
-    ) -> AsyncGenerator[ResourceInfo, None]:
+        max_size_bytes: int = 1048576,
+    ) -> AsyncGenerator[str, None]:
         """
-        List resources using regex-based scraping for HTML/JSON.
+        List resources using Strategy Pattern (Extractors) and JIT WebDAV caching.
+        Returns strings (URLs) instead of ResourceInfo to save performance during mass discovery.
         """
         if level < 1:
             raise ValueError("level must be greater than 0")
@@ -174,73 +177,31 @@ class HttpxDownloader(DownloaderProtocol):
         regex = re.compile(pattern) if pattern else None
         seen_urls = {url}
         queue = [(url, 1)]
+        known_webdav_roots = set()
 
-        while queue:
-            current_url, current_level = queue.pop(0)
+        async with await self._get_client() as client:
+            while queue:
+                current_url, current_level = queue.pop(0)
 
-            try:
-                async with await self._get_client() as client:
-                    async with client.stream("GET", current_url) as response:
-                        response.raise_for_status()
-                        content_type = response.headers.get("Content-Type", "")
+                try:
+                    result = await explore_resource(
+                        current_url,
+                        client,
+                        known_webdav_roots,
+                        max_scrape_size=max_size_bytes,
+                    )
 
-                        body = ""
-                        async for chunk in response.aiter_text():
-                            body += chunk
-                            if len(body) > 1024 * 1024:  # 1MB limit for scraping
-                                break
+                    for file_url in result.files:
+                        filename = url_to_file_name(file_url)
+                        if not regex or regex.search(filename):
+                            yield file_url
 
-                        # 1. Try to find links in HTML <a href="...">
-                        if "text/html" in content_type:
-                            links = re.findall(
-                                r'href=["\'](.[^"\']+)["\']', body, re.IGNORECASE
-                            )
-                            for link in links:
-                                absolute_url = urljoin(current_url, link)
-                                if absolute_url in seen_urls:
-                                    continue
+                    if current_level < level:
+                        for node_url in result.sub_nodes:
+                            if node_url not in seen_urls:
+                                seen_urls.add(node_url)
+                                queue.append((node_url, current_level + 1))
 
-                                filename = url_to_file_name(absolute_url)
-                                is_dir = absolute_url.endswith("/")
-
-                                # Recursion check: if it's a directory and we haven't reached depth limit
-                                if is_dir and current_level < level:
-                                    queue.append((absolute_url, current_level + 1))
-                                    seen_urls.add(absolute_url)
-
-                                # Yielding check: only yield if pattern matches (or no pattern)
-                                if not regex or regex.search(filename):
-                                    try:
-                                        info = await self.get_file_info(absolute_url)
-                                        yield info
-                                        seen_urls.add(absolute_url)
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"FAILED on get_file_info for {absolute_url}: {e}"
-                                        )
-                                        continue
-
-                        # 2. Try to find links in JSON values
-                        elif "application/json" in content_type:
-                            # Search for anything that looks like a URL in string values
-                            links = re.findall(r"\"https?://[^\"]+\"", body)
-                            for link in links:
-                                absolute_url = link.strip('"')
-                                if absolute_url in seen_urls:
-                                    continue
-
-                                filename = url_to_file_name(absolute_url)
-                                if not regex or regex.search(filename):
-                                    try:
-                                        info = await self.get_file_info(absolute_url)
-                                        yield info
-                                        seen_urls.add(absolute_url)
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"FAILED on get_file_info for {absolute_url}: {e}"
-                                        )
-                                        continue
-
-            except Exception as e:
-                logger.warning(f"Failed to list resources from {current_url}: {e}")
-                continue
+                except Exception as e:
+                    logger.warning(f"Failed to process {current_url}: {e}")
+                    continue

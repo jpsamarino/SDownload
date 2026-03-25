@@ -57,11 +57,11 @@ class DownloaderProtocol(Protocol):
     async def list_resources(
         self,
         url: str,
-        pattern: str | None = None,  # why pattern is str and not re.Pattern?
+        pattern: str | None = None,
         level: int = 1,
-    ) -> AsyncGenerator[ResourceInfo, None]:
+    ) -> AsyncGenerator[str, None]:
         """
-        Recursively discover and list resources from a specified URL.
+        Recursively discover and list resources (URLs) from a specified URL.
 
         Args:
             url (str): The URL to list resources from.
@@ -69,7 +69,7 @@ class DownloaderProtocol(Protocol):
             level (int): Maximum recursion depth for sub-routes. Minimum is 1.
 
         Yields:
-            AsyncGenerator[ResourceInfo, None]: An asynchronous generator yielding
-            `ResourceInfo` instances.
+            AsyncGenerator[str, None]: An asynchronous generator yielding
+            absolute URL strings.
         """
         ...

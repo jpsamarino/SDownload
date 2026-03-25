@@ -1,27 +1,24 @@
-import httpx
-from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Protocol
 
+@dataclass
+class ExtractedLink:
+    """
+    Represents a link found during parsing.
+    is_dir can be True (confirmed directory), False (confirmed file), 
+    or None (unknown, needs probing).
+    """
+    url: str
+    is_dir: bool | None = None
 
 class ResourceExtractorProtocol(Protocol):
     """
-    Protocol for resource extractors (HTML, JSON, WebDAV).
-
-    Extractors are responsible for fetching (if necessary) and parsing content
-    to discover links/resources. They must always return absolute URLs.
+    Protocol for resource parsers (HTML, JSON, WebDAV).
+    Parsers are strictly synchronous and operate on raw strings/content.
     """
 
-    async def extract(
-        self, url: str, client: httpx.AsyncClient, max_scrape_size: int = 1048576
-    ) -> AsyncGenerator[str, None]:
+    def extract(self, content: str, base_url: str) -> list[ExtractedLink]:
         """
-        Extract absolute URLs from the resource at the given URL.
-
-        Args:
-            url (str): The URL of the resource to extract from.
-            client (httpx.AsyncClient): The HTTP client to use for requests.
-
-        Yields:
-            AsyncGenerator[str, None]: An asynchronous generator of absolute URLs found.
+        Parses the content and returns a list of ExtractedLink objects.
         """
         ...

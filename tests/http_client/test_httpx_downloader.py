@@ -207,14 +207,14 @@ async def test_httpx_list_resources_html_scraping(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=5.0)
     downloader = HttpxDownloader(config)
 
-    # Test discovery page (Level 0/1)
+    # Test discovery page (Level 2 to hit and confirm the files)
     url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/"
-    resources = [r async for r in downloader.list_resources(url, level=1)]
+    resources = [r async for r in downloader.list_resources(url, level=2)]
 
-    # Should find file_100k.bin and the level1 directory
-    filenames = [r.file_name for r in resources]
-    assert "file_100k.bin" in filenames
-    assert any("level1" in r.download_url for r in resources)
+    # Should find file_100k.bin (Confirmed as file by the Scout at level 2)
+    assert any("file_100k.bin" in r for r in resources)
+    # Should NOT find 'level1/' as a file
+    assert not any("level1/" in r for r in resources)
 
 
 @pytest.mark.asyncio
@@ -222,17 +222,16 @@ async def test_httpx_list_resources_recursive(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=5.0)
     downloader = HttpxDownloader(config)
 
-    # Test recursive depth Level 2
+    # Test recursive depth Level 3 (Root + Level 1 + Level 2 files)
     url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
-    resources = [r async for r in downloader.list_resources(url, level=2)]
+    resources = [r async for r in downloader.list_resources(url, level=3)]
 
     # Level 1 should have: relative_file.txt, file_100k.bin (absolute link)
     # Level 2 should have: leaf.txt, file_1M.bin (absolute link)
-    filenames = [r.file_name for r in resources]
-    assert "relative_file.txt" in filenames
-    assert "file_100k.bin" in filenames
-    assert "leaf.txt" in filenames
-    assert "file_1M.bin" in filenames
+    assert any("relative_file.txt" in r for r in resources)
+    assert any("file_100k.bin" in r for r in resources)
+    assert any("leaf.txt" in r for r in resources)
+    assert any("file_1M.bin" in r for r in resources)
 
 
 @pytest.mark.asyncio
@@ -241,11 +240,22 @@ async def test_httpx_list_resources_with_regex(nginx_custom):
     downloader = HttpxDownloader(config)
 
     url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
-    # Only find files with "leaf" in name
+    # Only find files with "leaf" in name (Level 3 to reach and confirm leaf.txt)
     resources = [
-        r async for r in downloader.list_resources(url, pattern=r"leaf", level=2)
+        r async for r in downloader.list_resources(url, pattern=r"leaf", level=3)
     ]
 
-    filenames = [r.file_name for r in resources]
-    assert "leaf.txt" in filenames
-    assert len(filenames) == 1
+    assert any("leaf.txt" in r for r in resources)
+    assert len(resources) == 1
+
+
+# @pytest.mark.asyncio
+# async def test_httpx_real():
+#     config = HttpConfigModel(timeout_connect_s=5.0)
+#     downloader = HttpxDownloader(config)
+
+#     url = f"https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNPJ/"
+#     # Only find files with "leaf" in name
+#     resources = [r async for r in downloader.list_resources(url, level=2)]
+
+#     assert len(resources) > 1
