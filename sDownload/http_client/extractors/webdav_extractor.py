@@ -1,12 +1,11 @@
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
-from .protocol import ResourceExtractorProtocol, ExtractedLink
+from .protocol import ResourceExtractorProtocol, ExtractedLink, DiscoveryMethod
 
 
 class WebDavExtractor(ResourceExtractorProtocol):
     """
     Parser for WebDAV XML responses.
-    Parses PROPFIND Multi-Status (207) bodies to list items.
     Strictly synchronous and stateless.
     """
 
@@ -44,6 +43,12 @@ class WebDavExtractor(ResourceExtractorProtocol):
                     if collection is not None:
                         is_dir = True
 
-            final_links.append(ExtractedLink(url=absolute_url, is_dir=is_dir))
+            final_links.append(
+                ExtractedLink(
+                    url=absolute_url,
+                    is_dir=is_dir,
+                    method_hint=DiscoveryMethod.PROPFIND,
+                )
+            )
 
         return final_links

@@ -1,6 +1,6 @@
 import re
 from urllib.parse import urljoin
-from .protocol import ResourceExtractorProtocol, ExtractedLink
+from .protocol import ResourceExtractorProtocol, ExtractedLink, DiscoveryMethod
 
 
 class TextPatternExtractor(ResourceExtractorProtocol):
@@ -28,12 +28,19 @@ class TextPatternExtractor(ResourceExtractorProtocol):
             absolute_url = urljoin(base_url, raw_link)
             if absolute_url not in seen_links:
                 seen_links.add(absolute_url)
-                final_links.append(ExtractedLink(url=absolute_url, is_dir=None))
+                # Links from HTML attributes are likely standard HTTP resources
+                final_links.append(
+                    ExtractedLink(
+                        url=absolute_url,
+                        method_hint=DiscoveryMethod.GET,
+                    )
+                )
 
         for match in self._ABS_URL_REGEX.finditer(content):
             raw_link = match.group(2).strip()
             if raw_link not in seen_links:
                 seen_links.add(raw_link)
-                final_links.append(ExtractedLink(url=raw_link, is_dir=None))
+                # Generic absolute URLs (often from JS strings) are UNKNOWN
+                final_links.append(ExtractedLink(url=raw_link))
 
         return final_links

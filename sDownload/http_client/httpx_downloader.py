@@ -15,6 +15,7 @@ from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 from .httpx_error_mapper import map_httpx_error
 from .resource_explorer import explore_resource
+from .extractors.protocol import DiscoveryMethod
 
 
 logger = logging.getLogger(__name__)
@@ -168,7 +169,7 @@ class HttpxDownloader(DownloaderProtocol):
         max_size_bytes: int = 1048576,
     ) -> AsyncGenerator[str, None]:
         """
-        List resources using Strategy Pattern (Extractors) and JIT WebDAV caching.
+        List resources using Strategy Pattern (Extractors).
         Returns strings (URLs) instead of ResourceInfo to save performance during mass discovery.
         """
         if level < 1:
@@ -176,18 +177,17 @@ class HttpxDownloader(DownloaderProtocol):
 
         regex = re.compile(pattern) if pattern else None
         seen_urls = {url}
-        queue = [(url, 1)]
-        known_webdav_roots = set()
+        queue = [(url, 1, DiscoveryMethod.UNKNOWN)]  # (url, level, method_hint: DiscoveryMethod)
 
         async with await self._get_client() as client:
             while queue:
-                current_url, current_level = queue.pop(0)
+                current_url, current_level, current_hint = queue.pop(0)
 
                 try:
                     result = await explore_resource(
                         current_url,
                         client,
-                        known_webdav_roots,
+                        method_hint=current_hint,
                         max_scrape_size=max_size_bytes,
                     )
 
@@ -196,11 +196,13 @@ class HttpxDownloader(DownloaderProtocol):
                         if not regex or regex.search(filename):
                             yield file_url
 
-                    if current_level < level:
-                        for node_url in result.sub_nodes:
-                            if node_url not in seen_urls:
-                                seen_urls.add(node_url)
-                                queue.append((node_url, current_level + 1))
+                    if current_level <= level:
+                        for link in result.sub_nodes:
+                            if link.url not in seen_urls:
+                                seen_urls.add(link.url)
+                                queue.append(
+                                    (link.url, current_level + 1, link.method_hint)
+                                )
 
                 except Exception as e:
                     logger.warning(f"Failed to process {current_url}: {e}")

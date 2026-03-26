@@ -213,8 +213,8 @@ async def test_httpx_list_resources_html_scraping(nginx_custom):
 
     # Should find file_100k.bin (Confirmed as file by the Scout at level 2)
     assert any("file_100k.bin" in r for r in resources)
-    # Should NOT find 'level1/' as a file
-    assert not any("level1/" in r for r in resources)
+    # Should NOT find 'level1/' as a file (endswith check is safer)
+    assert not any(r.endswith("level1/") for r in resources)
 
 
 @pytest.mark.asyncio
@@ -257,5 +257,17 @@ async def test_httpx_list_resources_with_regex(nginx_custom):
 #     url = f"https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNPJ/"
 #     # Only find files with "leaf" in name
 #     resources = [r async for r in downloader.list_resources(url, level=2)]
+
+#     assert len(resources) > 1
+
+
+# @pytest.mark.asyncio
+# async def test_httpx_real2():
+#     config = HttpConfigModel(timeout_connect_s=5.0)
+#     downloader = HttpxDownloader(config)
+
+#     url = f"https://seu-convenio.com"
+#     # Only find files with "leaf" in name
+#     resources = [r async for r in downloader.list_resources(url, level=1)]
 
 #     assert len(resources) > 1

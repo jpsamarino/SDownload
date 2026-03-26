@@ -19,8 +19,6 @@ class JsonExtractor(ResourceExtractorProtocol):
             raw_link = match.group(2).strip()
             if raw_link not in seen_links:
                 seen_links.add(raw_link)
-                # Absolute URLs from JSON values are likely files or pages, 
-                # we don't know the type from raw strings.
-                final_links.append(ExtractedLink(url=raw_link, is_dir=None))
-                
+                final_links.append(ExtractedLink(url=raw_link))
+
         return final_links
