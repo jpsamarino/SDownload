@@ -177,11 +177,15 @@ class HttpxDownloader(DownloaderProtocol):
 
         regex = re.compile(pattern) if pattern else None
         seen_urls = {url}
-        queue = [(url, 1, DiscoveryMethod.UNKNOWN)]  # (url, level, method_hint: DiscoveryMethod)
+        queue = [
+            (url, 1, DiscoveryMethod.UNKNOWN, False)
+        ]  # (url, level, method_hint: DiscoveryMethod, only_files: bool)
 
         async with await self._get_client() as client:
             while queue:
-                current_url, current_level, current_hint = queue.pop(0)
+                current_url, current_level, current_hint, current_only_files = (
+                    queue.pop(0)
+                )
 
                 try:
                     result = await explore_resource(
@@ -189,6 +193,7 @@ class HttpxDownloader(DownloaderProtocol):
                         client,
                         method_hint=current_hint,
                         max_scrape_size=max_size_bytes,
+                        only_files=current_only_files,
                     )
 
                     for file_url in result.files:
@@ -196,13 +201,31 @@ class HttpxDownloader(DownloaderProtocol):
                         if not regex or regex.search(filename):
                             yield file_url
 
-                    if current_level <= level:
-                        for link in result.sub_nodes:
+                    if current_level < level:
+                        for link in result.sub_nodes + result.unknown_links:
                             if link.url not in seen_urls:
                                 seen_urls.add(link.url)
                                 queue.append(
-                                    (link.url, current_level + 1, link.method_hint)
+                                    (
+                                        link.url,
+                                        current_level + 1,
+                                        link.method_hint,
+                                        False,
+                                    )
                                 )
+                    else:
+                        for link in result.unknown_links:
+                            if link.url not in seen_urls:
+                                if not regex or regex.search(link.url):
+                                    seen_urls.add(link.url)
+                                    queue.append(
+                                        (
+                                            link.url,
+                                            current_level + 1,
+                                            link.method_hint,
+                                            True,
+                                        )
+                                    )
 
                 except Exception as e:
                     logger.warning(f"Failed to process {current_url}: {e}")

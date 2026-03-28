@@ -1,6 +1,8 @@
+from sDownload.utils import get_url_extension
 from typing import NamedTuple, List
 import httpx
 import logging
+from sDownload.utils import is_navigable
 from .extractors.factory import ExtractorFactory
 from .extractors.protocol import ExtractedLink, DiscoveryMethod
 
@@ -16,6 +18,7 @@ class DiscoveryResult(NamedTuple):
 
     files: List[str]
     sub_nodes: List[ExtractedLink]
+    unknown_links: List[ExtractedLink]
 
 
 async def explore_resource(
@@ -23,10 +26,13 @@ async def explore_resource(
     client: httpx.AsyncClient,
     method_hint: DiscoveryMethod = DiscoveryMethod.UNKNOWN,
     max_scrape_size: int = 1048576,
+    only_files: bool = False,
 ) -> DiscoveryResult:
 
     if method_hint != DiscoveryMethod.UNKNOWN:
-        return await _explore_with_method(url, client, method_hint, max_scrape_size)
+        return await _explore_with_method(
+            url, client, method_hint, max_scrape_size, only_files
+        )
 
     logger.debug(f"Probing (OPTIONS) unknown resource: {url}")
     try:
@@ -35,31 +41,23 @@ async def explore_resource(
         dav_header = opt_resp.headers.get("DAV")
         allow_header = opt_resp.headers.get("Allow", "")
 
-        if dav_header or "PROPFIND" in allow_header:
+        if dav_header or "PROPFIND" in allow_header and not only_files:
             return await _explore_with_method(
                 url, client, DiscoveryMethod.PROPFIND, max_scrape_size
             )
 
+        ct = opt_resp.headers.get("Content-Type", "")
+
+        if not is_navigable("", ct):
+            logger.debug(f"Confirmed static file via OPTIONS: {url}")
+            return DiscoveryResult(files=[url], sub_nodes=[])
+
     except Exception as e:
         logger.warning(f"Failed to probe {url}: {e}")
 
+    if only_files:
+        return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])
     return await _explore_with_method(url, client, DiscoveryMethod.GET, max_scrape_size)
-
-
-def is_probably_navigable(content_type: str) -> bool:
-    """
-    Checks if a content type is likely to contain discoverable links
-    and should be treated primarily as a container (not a download).
-    """
-    content_type = content_type.lower()
-    navigable_types = [
-        "html",
-        "json",
-        "xml",
-        "javascript",
-        "css",
-    ]
-    return any(t in content_type for t in navigable_types)
 
 
 async def _explore_with_method(
@@ -67,6 +65,7 @@ async def _explore_with_method(
     client: httpx.AsyncClient,
     method: DiscoveryMethod,
     max_scrape_size: int,
+    only_files: bool = False,
     is_retry: bool = False,
 ) -> DiscoveryResult:
 
@@ -87,6 +86,15 @@ async def _explore_with_method(
             chunks = []
             current_total = 0
             checked_for_upgrade = False
+
+            if only_files:
+                ext = get_url_extension(url)
+                if is_navigable(ext, resp.headers.get("Content-Type", "")) == False:
+                    return DiscoveryResult(
+                        files=[str(resp.url)], sub_nodes=[], unknown_links=[]
+                    )
+                else:
+                    return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])
 
             async for chunk in resp.aiter_text():
                 chunks.append(chunk)
@@ -139,20 +147,28 @@ async def _explore_with_method(
 
             extracted_links = parser.extract(body, str(resp.url))
 
+            # Decide if the current URL is a file or just a container
             is_pure_container = (
-                is_probably_navigable(content_type) or resp.status_code == 207
+                is_navigable("", content_type) or resp.status_code == 207
             )
             found_files = [str(resp.url)] if not is_pure_container else []
-            found_sub_nodes = []
+            found_sub_nodes = []  # error
+            unknown_links = []
 
             for link in extracted_links:
                 if link.is_dir is False:
                     found_files.append(link.url)
-                else:
+                elif link.is_dir is True:
                     found_sub_nodes.append(link)
+                else:
+                    unknown_links.append(link)
 
-            return DiscoveryResult(files=found_files, sub_nodes=found_sub_nodes)
+            return DiscoveryResult(
+                files=found_files,
+                sub_nodes=found_sub_nodes,
+                unknown_links=unknown_links,
+            )
 
     except Exception as e:
         logger.warning(f"Failed to explore {url}: {e}")
-        return DiscoveryResult(files=[], sub_nodes=[])
+        return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])

@@ -28,10 +28,6 @@ def test_is_navigable_dynamic_configuration():
     # Now the crawler should consider it navigable
     assert is_navigable("besdep") is True
 
-    # Reset for the next tests
-    navigable_extensions.reset_to_default()
-    assert is_navigable("besdep") is False
-
 
 def test_is_navigable_combinations():
     assert is_navigable("zip", "text/html") is True

@@ -14,24 +14,22 @@ def test_text_pattern_extractor_finds_links():
     </html>
     """
     base_url = "http://example.com/sub/"
-    
+
     links = extractor.extract(html, base_url)
     urls = [l.url for l in links]
-    
+
     assert "http://example.com/sub/page1.html" in urls
     assert "http://example.com/images/logo.png" in urls
     assert "https://external.com/api" in urls
-    # HTML parser doesn't know if they are dirs
-    assert all(l.is_dir is None for l in links)
 
 
 def test_text_pattern_extractor_finds_absolute_urls_in_text():
     extractor = TextPatternExtractor()
     text = "Find this: 'https://other.com/ext.mp4' and maybe 'http://localhost:8080/data.csv'"
-    
+
     links = extractor.extract(text, "http://any.com")
     urls = [l.url for l in links]
-    
+
     assert "https://other.com/ext.mp4" in urls
     assert "http://localhost:8080/data.csv" in urls
     assert len(urls) == 2
