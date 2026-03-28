@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urljoin
+from sDownload.utils import get_url_extension, is_navigable, normalize_url
 from .protocol import ResourceExtractorProtocol, ExtractedLink, DiscoveryMethod
 
 
@@ -18,29 +18,33 @@ class TextPatternExtractor(ResourceExtractorProtocol):
 
     def extract(self, content: str, base_url: str) -> list[ExtractedLink]:
         seen_links = set()
-        final_links = []
+        final_links: list[ExtractedLink] = []
 
-        for match in self._ATTR_REGEX.finditer(content):
-            raw_link = match.group(2).strip()
-            if not raw_link:
-                continue
+        for regex in (self._ATTR_REGEX, self._ABS_URL_REGEX):
+            from_native_html = regex is self._ATTR_REGEX
+            for match in regex.finditer(content):
+                raw_link = match.group(2)
+                url = normalize_url(raw_link, base_url)
+                url_normalized = url.rstrip("/")
+                if not url or url_normalized in seen_links or "http" not in url:
+                    continue
+                seen_links.add(url_normalized)
 
-            absolute_url = urljoin(base_url, raw_link)
-            if absolute_url not in seen_links:
-                seen_links.add(absolute_url)
-                # Links from HTML attributes are likely standard HTTP resources
-                final_links.append(
-                    ExtractedLink(
-                        url=absolute_url,
-                        method_hint=DiscoveryMethod.GET,
-                    )
+                ext = get_url_extension(url)
+                is_dir = is_navigable(ext)
+
+                method_hint = (
+                    DiscoveryMethod.GET
+                    if from_native_html or (is_dir is False)
+                    else DiscoveryMethod.UNKNOWN
                 )
 
-        for match in self._ABS_URL_REGEX.finditer(content):
-            raw_link = match.group(2).strip()
-            if raw_link not in seen_links:
-                seen_links.add(raw_link)
-                # Generic absolute URLs (often from JS strings) are UNKNOWN
-                final_links.append(ExtractedLink(url=raw_link))
+                final_links.append(
+                    ExtractedLink(
+                        url=url,
+                        method_hint=method_hint,
+                        is_dir=is_dir,
+                    )
+                )
 
         return final_links

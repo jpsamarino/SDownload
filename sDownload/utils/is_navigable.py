@@ -1,16 +1,22 @@
-from .navigable_config import navigable_extensions
+from .navigable_config import navigable_extensions, navigable_content_types
 
-def is_navigable(extension: str, content_type: str = "") -> bool:
+
+def is_navigable(extension: str, content_type: str = "") -> bool | None:
     """
-    Decides whether the resource should be navigated to find internal links
-    by the scout.
+    Decide whether a resource should be navigated to find internal links.
+
+    Returns:
+        - True  -> should navigate
+        - False -> should not navigate
+        - None  -> unknown (no extension or content_type)
     """
-    navigable = navigable_extensions.get_all()
-    
-    extension_lower = extension.lower()
-    content_type_lower = content_type.lower()
-    
-    return (
-        extension_lower in navigable or 
-        any(t in content_type_lower for t in ["html", "json", "xml"])
-    )
+    ext = extension.lower().strip(".")
+    ct = content_type.lower()
+
+    if not ext and not ct:
+        return None  # unknown
+    if not ext:
+        return ct in navigable_content_types
+    if ext in navigable_extensions:
+        return True
+    return ct in navigable_content_types

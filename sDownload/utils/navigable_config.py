@@ -11,7 +11,6 @@ class NavigableExtensions:
         "jsp",
         "aspx",
         "cgi",
-        "txt",
         "js",
         "css",
     }
@@ -29,21 +28,6 @@ class NavigableExtensions:
     def add(self, ext: str):
         self._extensions.add(self._normalize(ext))
 
-    def remove(self, ext: str):
-        self._extensions.discard(self._normalize(ext))
-
-    def reset_to_default(self):
-        """Restore default extensions."""
-        self._extensions = set(self._DEFAULT)
-
-    def set_all(self, extensions: set[str]):
-        """Replace all extensions with a new set."""
-        self._extensions = {self._normalize(ext) for ext in extensions}
-
-    def get_all(self) -> set[str]:
-        """Return all registered extensions."""
-        return self._extensions
-
     def __contains__(self, ext: str) -> bool:
         """Allow usage like: 'ext in navigable_extensions'"""
         return self._normalize(ext) in self._extensions
@@ -54,3 +38,28 @@ class NavigableExtensions:
 
 
 navigable_extensions = NavigableExtensions()
+
+
+class NavigableContentTypes:
+    __slots__ = ("_patterns",)
+
+    _DEFAULT = {"html", "json", "xml"}
+
+    def __init__(self, patterns: set[str] | None = None):
+        self._patterns = set(patterns or self._DEFAULT)
+
+    def add(self, pattern: str):
+        self._patterns.add(pattern.lower())
+
+    def __contains__(self, content_type: str) -> bool:
+        if not content_type:
+            return False
+
+        ct = content_type.lower()
+        return any(pattern in ct for pattern in self._patterns)
+
+    def __iter__(self):
+        return iter(self._patterns)
+
+
+navigable_content_types = NavigableContentTypes()

@@ -8,6 +8,7 @@ class DiscoveryMethod(Enum):
     PROPFIND = "PROPFIND"
     POST = "POST"
     UNKNOWN = "UNKNOWN"
+    OTHER = "OTHER"
 
 
 @dataclass
