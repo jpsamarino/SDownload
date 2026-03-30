@@ -16,7 +16,7 @@ from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 from .httpx_error_mapper import map_httpx_error
 from .resource_explorer import explore_resource, DiscoveryTask
-from .extractors.protocol import DiscoveryMethod
+from .extractors.protocol import DiscoveryMethod, ExtractedLink
 
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,23 @@ class HttpxDownloader(DownloaderProtocol):
         seen_urls = {url}
         queue = deque([DiscoveryTask(url=url, level=1)])
 
+        def _enqueue_links(links: list[ExtractedLink], is_last_level: bool = False):
+            """Helper to enqueue links with proper seen_urls dedup and filtering."""
+            for link in links:
+                if link.url in seen_urls:
+                    continue
+                if is_last_level and regex and not regex.search(link.url):
+                    continue
+                seen_urls.add(link.url)
+                queue.append(
+                    DiscoveryTask(
+                        url=link.url,
+                        level=task.level + 1,
+                        method=link.method_hint,
+                        only_files=is_last_level,
+                    )
+                )
+
         async with await self._get_client() as client:
             while queue:
                 task = queue.popleft()
@@ -193,39 +210,16 @@ class HttpxDownloader(DownloaderProtocol):
                         only_files=task.only_files,
                     )
 
-                    # 1. Yield confirmed files
                     for file_url in result.files:
                         filename = url_to_file_name(file_url)
                         if not regex or regex.search(filename):
                             yield file_url
 
-                    # 2. Add sub-nodes and unknown links to the queue for next level
                     if task.level < level:
-                        for link in result.sub_nodes + result.unknown_links:
-                            if link.url not in seen_urls:
-                                seen_urls.add(link.url)
-                                queue.append(
-                                    DiscoveryTask(
-                                        url=link.url,
-                                        level=task.level + 1,
-                                        method=link.method_hint,
-                                    )
-                                )
-
-                    # 3. Last level: only try to confirm if unknown links are files
+                        _enqueue_links(result.sub_nodes)
+                        _enqueue_links(result.unknown_links)
                     elif task.level == level:
-                        for link in result.unknown_links:
-                            if link.url not in seen_urls:
-                                if not regex or regex.search(link.url):
-                                    seen_urls.add(link.url)
-                                    queue.append(
-                                        DiscoveryTask(
-                                            url=link.url,
-                                            level=task.level + 1,
-                                            method=link.method_hint,
-                                            only_files=True,
-                                        )
-                                    )
+                        _enqueue_links(result.unknown_links, is_last_level=True)
 
                 except Exception as e:
                     logger.warning(f"Failed to process {task.url}: {e}")
