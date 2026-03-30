@@ -1,24 +1,38 @@
-from sDownload.utils import get_url_extension
-from typing import NamedTuple, List
+from dataclasses import dataclass, field
+from typing import List
 import httpx
 import logging
-from sDownload.utils import is_navigable
+from sDownload.utils import is_navigable, get_url_extension
 from .extractors.factory import ExtractorFactory
 from .extractors.protocol import ExtractedLink, DiscoveryMethod
 
 logger = logging.getLogger(__name__)
 
 
-class DiscoveryResult(NamedTuple):
+@dataclass
+class DiscoveryResult:
     """
     The result of a resource exploration.
     - files: URLs that are confirmed downloadable files.
     - sub_nodes: ExtractedLink objects for confirmed navigable nodes (pages or folders).
+    - unknown_links: ExtractedLink objects that need probing.
     """
 
-    files: List[str]
-    sub_nodes: List[ExtractedLink]
-    unknown_links: List[ExtractedLink]
+    files: List[str] = field(default_factory=list)
+    sub_nodes: List[ExtractedLink] = field(default_factory=list)
+    unknown_links: List[ExtractedLink] = field(default_factory=list)
+
+
+@dataclass
+class DiscoveryTask:
+    """
+    Represents a task for the crawler to discover resources.
+    """
+
+    url: str
+    level: int
+    method: DiscoveryMethod = DiscoveryMethod.UNKNOWN
+    only_files: bool = False
 
 
 async def explore_resource(
@@ -50,13 +64,13 @@ async def explore_resource(
 
         if not is_navigable("", ct):
             logger.debug(f"Confirmed static file via OPTIONS: {url}")
-            return DiscoveryResult(files=[url], sub_nodes=[])
+            return DiscoveryResult(files=[url])
 
     except Exception as e:
         logger.warning(f"Failed to probe {url}: {e}")
 
     if only_files:
-        return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])
+        return DiscoveryResult()
     return await _explore_with_method(url, client, DiscoveryMethod.GET, max_scrape_size)
 
 
@@ -90,11 +104,8 @@ async def _explore_with_method(
             if only_files:
                 ext = get_url_extension(url)
                 if is_navigable(ext, resp.headers.get("Content-Type", "")) == False:
-                    return DiscoveryResult(
-                        files=[str(resp.url)], sub_nodes=[], unknown_links=[]
-                    )
-                else:
-                    return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])
+                    return DiscoveryResult(files=[str(resp.url)])
+                return DiscoveryResult()
 
             async for chunk in resp.aiter_text():
                 chunks.append(chunk)
@@ -143,7 +154,7 @@ async def _explore_with_method(
             )
 
             if not parser or is_attachment:
-                return DiscoveryResult(files=[str(resp.url)], sub_nodes=[])
+                return DiscoveryResult(files=[str(resp.url)])
 
             extracted_links = parser.extract(body, str(resp.url))
 
@@ -152,7 +163,7 @@ async def _explore_with_method(
                 is_navigable("", content_type) or resp.status_code == 207
             )
             found_files = [str(resp.url)] if not is_pure_container else []
-            found_sub_nodes = []  # error
+            found_sub_nodes = []
             unknown_links = []
 
             for link in extracted_links:
@@ -171,4 +182,4 @@ async def _explore_with_method(
 
     except Exception as e:
         logger.warning(f"Failed to explore {url}: {e}")
-        return DiscoveryResult(files=[], sub_nodes=[], unknown_links=[])
+        return DiscoveryResult()

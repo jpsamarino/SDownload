@@ -5,6 +5,7 @@ from urllib.parse import urljoin, urlparse
 from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from collections import deque
 import httpx
 from sDownload.exceptions import (
     FileIDMismatchError,
@@ -14,7 +15,7 @@ from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
 from sDownload.utils import url_to_file_name
 from .httpx_error_mapper import map_httpx_error
-from .resource_explorer import explore_resource
+from .resource_explorer import explore_resource, DiscoveryTask
 from .extractors.protocol import DiscoveryMethod
 
 
@@ -177,56 +178,55 @@ class HttpxDownloader(DownloaderProtocol):
 
         regex = re.compile(pattern) if pattern else None
         seen_urls = {url}
-        queue = [
-            (url, 1, DiscoveryMethod.UNKNOWN, False)
-        ]  # (url, level, method_hint: DiscoveryMethod, only_files: bool)
+        queue = deque([DiscoveryTask(url=url, level=1)])
 
         async with await self._get_client() as client:
             while queue:
-                current_url, current_level, current_hint, current_only_files = (
-                    queue.pop(0)
-                )
+                task = queue.popleft()
 
                 try:
                     result = await explore_resource(
-                        current_url,
+                        task.url,
                         client,
-                        method_hint=current_hint,
+                        method_hint=task.method,
                         max_scrape_size=max_size_bytes,
-                        only_files=current_only_files,
+                        only_files=task.only_files,
                     )
 
+                    # 1. Yield confirmed files
                     for file_url in result.files:
                         filename = url_to_file_name(file_url)
                         if not regex or regex.search(filename):
                             yield file_url
 
-                    if current_level < level:
+                    # 2. Add sub-nodes and unknown links to the queue for next level
+                    if task.level < level:
                         for link in result.sub_nodes + result.unknown_links:
                             if link.url not in seen_urls:
                                 seen_urls.add(link.url)
                                 queue.append(
-                                    (
-                                        link.url,
-                                        current_level + 1,
-                                        link.method_hint,
-                                        False,
+                                    DiscoveryTask(
+                                        url=link.url,
+                                        level=task.level + 1,
+                                        method=link.method_hint,
                                     )
                                 )
-                    else:
+
+                    # 3. Last level: only try to confirm if unknown links are files
+                    elif task.level == level:
                         for link in result.unknown_links:
                             if link.url not in seen_urls:
                                 if not regex or regex.search(link.url):
                                     seen_urls.add(link.url)
                                     queue.append(
-                                        (
-                                            link.url,
-                                            current_level + 1,
-                                            link.method_hint,
-                                            True,
+                                        DiscoveryTask(
+                                            url=link.url,
+                                            level=task.level + 1,
+                                            method=link.method_hint,
+                                            only_files=True,
                                         )
                                     )
 
                 except Exception as e:
-                    logger.warning(f"Failed to process {current_url}: {e}")
+                    logger.warning(f"Failed to process {task.url}: {e}")
                     continue
