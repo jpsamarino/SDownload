@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple
 import httpx
 import logging
 from sDownload.utils import is_navigable, get_url_extension
@@ -14,13 +14,13 @@ class DiscoveryResult:
     """
     The result of a resource exploration.
     - files: URLs that are confirmed downloadable files.
-    - sub_nodes: ExtractedLink objects for confirmed navigable nodes (pages or folders).
-    - unknown_links: ExtractedLink objects that need probing.
+    - directories: ExtractedLink objects for confirmed navigable nodes (pages or folders).
+    - unresolved_links: ExtractedLink objects that need probing.
     """
 
     files: List[str] = field(default_factory=list)
-    sub_nodes: List[ExtractedLink] = field(default_factory=list)
-    unknown_links: List[ExtractedLink] = field(default_factory=list)
+    directories: List[ExtractedLink] = field(default_factory=list)
+    unresolved_links: List[ExtractedLink] = field(default_factory=list)
 
 
 @dataclass
@@ -31,8 +31,90 @@ class DiscoveryTask:
 
     url: str
     level: int
-    method: DiscoveryMethod = DiscoveryMethod.UNKNOWN
-    only_files: bool = False
+    method_hint: DiscoveryMethod = DiscoveryMethod.UNKNOWN
+    process_only_files: bool = False
+
+
+def _method_to_string(method: DiscoveryMethod) -> str:
+    """Convert DiscoveryMethod enum to HTTP method string."""
+    match method:
+        case DiscoveryMethod.PROPFIND:
+            return "PROPFIND"
+        case DiscoveryMethod.POST:
+            return "POST"
+        case _:
+            return "GET"
+
+
+def _build_headers(method: DiscoveryMethod) -> dict:
+    """Build headers for the HTTP request."""
+    if method == DiscoveryMethod.PROPFIND:
+        return {"Depth": "1"}
+    return {}
+
+
+def _classify_process_only_files_response(
+    url: str, resp: httpx.Response
+) -> DiscoveryResult:
+    """Fast path: check if URL is a file based on extension and Content-Type."""
+    ext = get_url_extension(url)
+    if is_navigable(ext, resp.headers.get("Content-Type", "")) is False:
+        return DiscoveryResult(files=[str(resp.url)])
+    return DiscoveryResult()
+
+
+async def _stream_body(
+    client: httpx.AsyncClient,
+    method_str: str,
+    url: str,
+    headers: dict,
+    max_scrape_size: int,
+) -> Tuple[str, int]:
+    """Stream response body until max_scrape_size, return (body, total_bytes)."""
+    chunks = []
+    current_total = 0
+    async with client.stream(
+        method_str, url, headers=headers, follow_redirects=True
+    ) as resp:
+        async for chunk in resp.aiter_text():
+            chunks.append(chunk)
+            current_total += len(chunk)
+            if current_total >= max_scrape_size:
+                break
+    return "".join(chunks), current_total
+
+
+def _classify_and_extract(body: str, resp: httpx.Response) -> DiscoveryResult:
+    """Extract links from body and classify them."""
+    content_type = resp.headers.get("Content-Type", "").lower()
+    parser = ExtractorFactory.get_extractor(
+        content_type, DiscoveryMethod(resp.request.method)
+    )
+    is_attachment = "attachment" in resp.headers.get("Content-Disposition", "").lower()
+
+    if not parser or is_attachment:
+        return DiscoveryResult(files=[str(resp.url)])
+
+    extracted_links = parser.extract(body, str(resp.url))
+
+    is_directory = is_navigable("", content_type) or resp.status_code == 207
+    found_files = [str(resp.url)] if not is_directory else []
+    directories = []
+    unresolved_links = []
+
+    for link in extracted_links:
+        if link.is_dir is False:
+            found_files.append(link.url)
+        elif link.is_dir is True:
+            directories.append(link)
+        else:
+            unresolved_links.append(link)
+
+    return DiscoveryResult(
+        files=found_files,
+        directories=directories,
+        unresolved_links=unresolved_links,
+    )
 
 
 async def explore_resource(
@@ -40,12 +122,12 @@ async def explore_resource(
     client: httpx.AsyncClient,
     method_hint: DiscoveryMethod = DiscoveryMethod.UNKNOWN,
     max_scrape_size: int = 1048576,
-    only_files: bool = False,
+    process_only_files: bool = False,
 ) -> DiscoveryResult:
 
     if method_hint != DiscoveryMethod.UNKNOWN:
         return await _explore_with_method(
-            url, client, method_hint, max_scrape_size, only_files
+            url, client, method_hint, max_scrape_size, process_only_files
         )
 
     logger.debug(f"Probing (OPTIONS) unknown resource: {url}")
@@ -55,7 +137,7 @@ async def explore_resource(
         dav_header = opt_resp.headers.get("DAV")
         allow_header = opt_resp.headers.get("Allow", "")
 
-        if dav_header or "PROPFIND" in allow_header and not only_files:
+        if dav_header or "PROPFIND" in allow_header and not process_only_files:
             return await _explore_with_method(
                 url, client, DiscoveryMethod.PROPFIND, max_scrape_size
             )
@@ -69,7 +151,7 @@ async def explore_resource(
     except Exception as e:
         logger.warning(f"Failed to probe {url}: {e}")
 
-    if only_files:
+    if process_only_files:
         return DiscoveryResult()
     return await _explore_with_method(url, client, DiscoveryMethod.GET, max_scrape_size)
 
@@ -79,65 +161,41 @@ async def _explore_with_method(
     client: httpx.AsyncClient,
     method: DiscoveryMethod,
     max_scrape_size: int,
-    only_files: bool = False,
+    process_only_files: bool = False,
     is_retry: bool = False,
 ) -> DiscoveryResult:
 
-    match method:
-        case DiscoveryMethod.PROPFIND:
-            method_str = "PROPFIND"
-        case DiscoveryMethod.POST:
-            method_str = "POST"
-        case _:
-            method_str = "GET"
-
-    headers = {"Depth": "1"} if method == DiscoveryMethod.PROPFIND else {}
+    method_str = _method_to_string(method)
+    headers = _build_headers(method)
 
     try:
         async with client.stream(
             method_str, url, headers=headers, follow_redirects=True
         ) as resp:
-            chunks = []
-            current_total = 0
-            checked_for_upgrade = False
 
-            if only_files:
-                ext = get_url_extension(url)
-                if is_navigable(ext, resp.headers.get("Content-Type", "")) == False:
-                    return DiscoveryResult(files=[str(resp.url)])
-                return DiscoveryResult()
+            if process_only_files:
+                return _classify_process_only_files_response(url, resp)
 
-            async for chunk in resp.aiter_text():
-                chunks.append(chunk)
-                current_total += len(chunk)
+            body, current_total = await _stream_body(
+                client, method_str, url, headers, max_scrape_size
+            )
 
+            # Check for DAV upgrade during streaming (only on first GET pass)
+            if method == DiscoveryMethod.GET and not is_retry:
                 if (
-                    method == DiscoveryMethod.GET
-                    and not is_retry
-                    and not checked_for_upgrade
+                    'xmlns:d="DAV:"' in body
+                    or "<d:multistatus" in body
+                    or resp.status_code == 207
                 ):
-                    partial_body = "".join(chunks)
-                    if (
-                        'xmlns:d="DAV:"' in partial_body
-                        or "<d:multistatus" in partial_body
-                        or resp.status_code == 207
-                    ):
-                        return await _explore_with_method(
-                            url,
-                            client,
-                            DiscoveryMethod.PROPFIND,
-                            max_scrape_size,
-                            is_retry=True,
-                        )
+                    return await _explore_with_method(
+                        url,
+                        client,
+                        DiscoveryMethod.PROPFIND,
+                        max_scrape_size,
+                        is_retry=True,
+                    )
 
-                    if current_total > 32768:  # 32KB is enough for any DAV header/start
-                        checked_for_upgrade = True
-
-                if current_total >= max_scrape_size:
-                    break
-
-            body = "".join(chunks)
-
+            # PROPFIND fallback to GET
             if (
                 method == DiscoveryMethod.PROPFIND
                 and resp.status_code in (405, 501)
@@ -147,38 +205,7 @@ async def _explore_with_method(
                     url, client, DiscoveryMethod.GET, max_scrape_size, is_retry=True
                 )
 
-            content_type = resp.headers.get("Content-Type", "").lower()
-            parser = ExtractorFactory.get_extractor(content_type, method)
-            is_attachment = (
-                "attachment" in resp.headers.get("Content-Disposition", "").lower()
-            )
-
-            if not parser or is_attachment:
-                return DiscoveryResult(files=[str(resp.url)])
-
-            extracted_links = parser.extract(body, str(resp.url))
-
-            # Decide if the current URL is a file or just a container
-            is_pure_container = (
-                is_navigable("", content_type) or resp.status_code == 207
-            )
-            found_files = [str(resp.url)] if not is_pure_container else []
-            found_sub_nodes = []
-            unknown_links = []
-
-            for link in extracted_links:
-                if link.is_dir is False:
-                    found_files.append(link.url)
-                elif link.is_dir is True:
-                    found_sub_nodes.append(link)
-                else:
-                    unknown_links.append(link)
-
-            return DiscoveryResult(
-                files=found_files,
-                sub_nodes=found_sub_nodes,
-                unknown_links=unknown_links,
-            )
+            return _classify_and_extract(body, resp)
 
     except Exception as e:
         logger.warning(f"Failed to explore {url}: {e}")

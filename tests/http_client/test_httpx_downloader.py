@@ -235,6 +235,19 @@ async def test_httpx_list_resources_recursive(nginx_custom):
 
 
 @pytest.mark.asyncio
+async def test_httpx_list_resources_recursive(nginx_custom):
+    config = HttpConfigModel(timeout_connect_s=5.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
+    resources = [
+        r async for r in downloader.list_resources(url, level=3, pattern=r".bin$")
+    ]
+
+    assert any("file_100k.bin" in r for r in resources)
+    assert any("file_1M.bin" in r for r in resources)
+
+
+@pytest.mark.asyncio
 async def test_httpx_list_resources_with_regex(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=5.0)
     downloader = HttpxDownloader(config)

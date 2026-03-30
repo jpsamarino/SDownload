@@ -192,8 +192,8 @@ class HttpxDownloader(DownloaderProtocol):
                     DiscoveryTask(
                         url=link.url,
                         level=task.level + 1,
-                        method=link.method_hint,
-                        only_files=is_last_level,
+                        method_hint=link.method_hint,
+                        process_only_files=is_last_level,
                     )
                 )
 
@@ -205,9 +205,9 @@ class HttpxDownloader(DownloaderProtocol):
                     result = await explore_resource(
                         task.url,
                         client,
-                        method_hint=task.method,
+                        method_hint=task.method_hint,
                         max_scrape_size=max_size_bytes,
-                        only_files=task.only_files,
+                        process_only_files=task.process_only_files,
                     )
 
                     for file_url in result.files:
@@ -216,10 +216,10 @@ class HttpxDownloader(DownloaderProtocol):
                             yield file_url
 
                     if task.level < level:
-                        _enqueue_links(result.sub_nodes)
-                        _enqueue_links(result.unknown_links)
+                        _enqueue_links(result.directories)
+                        _enqueue_links(result.unresolved_links)
                     elif task.level == level:
-                        _enqueue_links(result.unknown_links, is_last_level=True)
+                        _enqueue_links(result.unresolved_links, is_last_level=True)
 
                 except Exception as e:
                     logger.warning(f"Failed to process {task.url}: {e}")
