@@ -1,0 +1,2 @@
+# Subdir file
+This is inside folder1.

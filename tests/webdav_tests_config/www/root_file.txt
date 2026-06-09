@@ -1,0 +1,2 @@
+# WebDAV Sample Data for Discovery Testing
+1: This is a root file.
