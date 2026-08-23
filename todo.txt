@@ -1,0 +1,4 @@
+- make a integrate test (NGINX) without filesize in chunk ( to mesure working to download without size defined)
+- avalia anyio para melhorar performance em gravaçao de arquivos evita shield
+- implementar uma outra forma de suavizar a velocidade (stats.update() e stats.speed_bps) para evitar velocidade 0 em alguns momentos
+- criar um importador padrão q recebe o tipo de protocolo e ele retornar o objeto padrão pronto como dowloader, strategy , storage, etc

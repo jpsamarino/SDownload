@@ -38,21 +38,23 @@ A descoberta de recursos via HTTP (HTML scraping, JSON parsing, WebDAV) não dev
        └── webdav_extractor.py      <-- Cria e processa requests XML (PROPFIND)
    ```
    **Arquivos Chave:**
-   - **`protocol.py`**: Define a interface com a assinatura `async def extract(self, url: str, client: httpx.AsyncClient) -> AsyncGenerator[str, None]:`.
-   - **`factory.py` (A Sonda):** A classe `ExtractorFactory` que faz um `HEAD` rápido para descobrir o `Content-Type` ou Headers DAV e decide a estratégia correspondente.
+   - **`protocol.py`**: Define a interface com a assinatura `async def extract(self, url: str, client: httpx.AsyncClient) -> AsyncGenerator[str, None]:`. O extrator tem a responsabilidade de sempre retornar **URLs absolutas** (resolvendo caminhos relativos com `urllib.parse.urljoin`).
+   - **`factory.py` (A Sonda):** A classe `ExtractorFactory` que faz um `HEAD` rápido para descobrir o `Content-Type` ou Headers DAV e decide a estratégia correspondente. Caso identifique um recurso "folha" (ex: um `.zip`, `.mp4` ou tipo de arquivo não mapeado), a factory deve retornar `None`, indicando ao orquestrador que a URL deve apenas ser repassada, sem extração.
+   - **Restrições de Dependência:** O parser de HTML e WebDAV (XML) deve utilizar métodos nativos (`re` ou `html.parser`, e `xml.etree.ElementTree`). **Não usar bibliotecas pesadas** adicionais como `beautifulsoup4`.
 
 3. **Orquestração Inteligente (BFS) no `HttpxDownloader`:**
    Limpar completamente a classe `HttpxDownloader` de lógica de Parsing/Scraping. O `list_resources` será exclusivamente um gerenciador de fila (BFS - Busca em Largura):
+   - Mantém um controle rigoroso de estado usando um conjunto (`set`) de `seen_urls` para evitar loops infinitos de crawling.
    - Avalia o nível de profundidade atual.
-   - Pede à `ExtractorFactory` a melhor estratégia.
-   - Usa o gerador do Extractor e passa pelo filtro `regex` (se `pattern` fornecido).
+   - Pede à `ExtractorFactory` a melhor estratégia. Se não houver estratégia (arquivo folha), apenas faz o `yield` da URL absolutas.
+   - Usa o gerador do Extractor com tolerância a falhas (exceções e timeouts individuais durante a extração devem ser logados como `warning` e ignorados, permitindo que a busca continue) e passa pelo filtro `regex` (se `pattern` fornecido).
    - Adiciona links no final da fila se restarem níveis recursivos.
 
 4. **Ambiente de Testes Avançado (WebDAV nativo):**
    - **HTML/JSON:** Utilizar o ambiente estático e seguro do Nginx (`scenarios_pages_html/teste1`) que já construímos e funciona perfeitamente para arquivos da web estáticos.
    - **Nginx WebDAV Constraint:** Como o Nginx oficial não suporta nativamente o método HTTP `PROPFIND` em WebDAV, vamos abandoná-lo para testes WebDAV de exploração profunda.
    - **Novo Container Testcontainers:** 
-     - Modificar o `conftest.py` criando uma nova *fixture* assíncrona que sobe dinamicamente a imagem de docker leve: `bytemark/webdav`.
+     - Modificar o `conftest.py` criando uma nova *fixture* assíncrona que sobe dinamicamente a imagem de docker leve: `bytemark/webdav`. A configuração será bastante semelhante ao que já temos com o Nginx atual.
      - Este será um servidor em uma porta distinta com diretórios criados no build up da *fixture*.
      - **Testes PROPFIND**: Executar requisições autênticas contra ele para validar a comunicação e o roteiro do `webdav_extractor.py`, garantindo alta manutenibilidade do serviço de crawler.
 
