@@ -1,8 +1,10 @@
 import asyncio
+import contextlib
 import logging
-from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
-from sDownload.interfaces.protocols import FileStorageProtocol
+
 from sDownload.exceptions import ChunkSuccessionError
+from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
+from sDownload.interfaces.protocols import FileStorageProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +77,7 @@ async def run_chunk_succession(
         )
 
         await storage.crop_file(stats_predecessor.chunk_file_name, start_crop, end_crop)
-        await storage.move_data(
-            stats_predecessor.chunk_file_name, stats_successor.chunk_file_name
-        )
+        await storage.move_data(stats_predecessor.chunk_file_name, stats_successor.chunk_file_name)
 
         stats_successor.bytes_downloaded = end_crop - start_crop + 1
         stats_successor.set_status(EDownloadStatus.COMPLETED)
@@ -92,10 +92,8 @@ async def run_chunk_succession(
 
         if predecessor_task and not predecessor_task.done():
             predecessor_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await predecessor_task
-            except asyncio.CancelledError:
-                pass
 
         stats_predecessor.remove_limit_observer()
         raise

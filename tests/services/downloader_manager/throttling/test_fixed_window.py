@@ -1,20 +1,20 @@
 import asyncio
 import time
+
 import pytest
-from sDownload.services.downloader_manager.throttling.fixed_window import (
-    FixedWindowThrottler,
-)
+
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
     ChunkRange,
+)
+from sDownload.services.downloader_manager.throttling.fixed_window import (
+    FixedWindowThrottler,
 )
 
 
 @pytest.fixture
 def stats():
-    return ChunkDownloadStats(
-        chunk_file_name="test.bin", range=ChunkRange(0, 1000), file_size=1001
-    )
+    return ChunkDownloadStats(chunk_file_name="test.bin", range=ChunkRange(0, 1000), file_size=1001)
 
 
 async def async_gen(data_list):

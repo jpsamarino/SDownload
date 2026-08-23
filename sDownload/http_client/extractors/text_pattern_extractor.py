@@ -1,6 +1,8 @@
 import re
+
 from sDownload.utils import get_url_extension, is_navigable, normalize_url
-from .protocol import ResourceExtractorProtocol, ExtractedLink, DiscoveryMethod
+
+from .protocol import DiscoveryMethod, ExtractedLink, ResourceExtractorProtocol
 
 
 class TextPatternExtractor(ResourceExtractorProtocol):
@@ -10,9 +12,7 @@ class TextPatternExtractor(ResourceExtractorProtocol):
     Strictly synchronous and stateless.
     """
 
-    _ATTR_REGEX = re.compile(
-        r'(?i)(?:href|src|data-url|data-href)\s*=\s*(["\'])(.*?)\1'
-    )
+    _ATTR_REGEX = re.compile(r'(?i)(?:href|src|data-url|data-href)\s*=\s*(["\'])(.*?)\1')
 
     _ABS_URL_REGEX = re.compile(r'(?i)(["\'])(https?://[^\s"\'<>]+)\1')
 

@@ -1,17 +1,17 @@
-import asyncio
-from datetime import datetime, timedelta, timezone
-from typing import AsyncIterable, Optional
+from collections.abc import AsyncIterable
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from sDownload.exceptions import (
-    ResourceNotFoundError,
     CommunicationError,
     FileAlreadyExistsError,
+    ResourceNotFoundError,
 )
 from sDownload.interfaces.models import (
+    EDownloadStatus,
     ResourceInfo,
     StoredFileInfo,
-    EDownloadStatus,
 )
 from sDownload.interfaces.models.params import DownloadTaskParams
 from sDownload.interfaces.protocols import DownloaderProtocol, FileStorageProtocol
@@ -26,7 +26,7 @@ class MockDownloader(DownloaderProtocol):
     ):
         self.resources = resources
         self.exc_to_raise = exc_to_raise
-        self.get_file_info_called_with: Optional[str] = None
+        self.get_file_info_called_with: str | None = None
 
     async def get_file_info(self, url: str) -> ResourceInfo:
         self.get_file_info_called_with = url
@@ -34,9 +34,7 @@ class MockDownloader(DownloaderProtocol):
             raise self.exc_to_raise
         return self.resources
 
-    async def download_chunk(
-        self, url: str, start_byte: int = 0, end_byte: int | None = None
-    ):
+    async def download_chunk(self, url: str, start_byte: int = 0, end_byte: int | None = None):
         if False:
             yield b""
 
@@ -45,7 +43,7 @@ class MockStorage(FileStorageProtocol):
     def __init__(self, existing_files: dict[str, StoredFileInfo] | None = None):
         self.existing_files = existing_files or {}
 
-    async def get_data_info(self, key: str) -> Optional[StoredFileInfo]:
+    async def get_data_info(self, key: str) -> StoredFileInfo | None:
         return self.existing_files.get(key)
 
     async def save_binary_data(self, key: str, data: AsyncIterable[bytes]):
@@ -81,7 +79,7 @@ def base_resource():
         download_url="https://example.com/remote_file.zip",
         transmission_protocol="http",
         server_accept_ranges=True,
-        file_created_at=datetime.now(timezone.utc),
+        file_created_at=datetime.now(UTC),
         protocol_data=None,
     )
 
@@ -127,9 +125,7 @@ async def test_resolve_file_info_custom_file_name_override(tmp_path, base_resour
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_no_range_support_downgrades_chunking(
-    tmp_path, base_resource
-):
+async def test_resolve_file_info_no_range_support_downgrades_chunking(tmp_path, base_resource):
     base_resource.server_accept_ranges = False
     downloader = MockDownloader(base_resource)
     storage = MockStorage()
@@ -148,9 +144,7 @@ async def test_resolve_file_info_no_range_support_downgrades_chunking(
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_unknown_file_size_downgrades_chunking(
-    tmp_path, base_resource
-):
+async def test_resolve_file_info_unknown_file_size_downgrades_chunking(tmp_path, base_resource):
     base_resource.file_size = 0
     downloader = MockDownloader(base_resource)
     storage = MockStorage()
@@ -170,14 +164,12 @@ async def test_resolve_file_info_unknown_file_size_downgrades_chunking(
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_trusted_no_overwrite(
-    tmp_path, base_resource
-):
+async def test_resolve_file_info_existing_file_trusted_no_overwrite(tmp_path, base_resource):
     # File created just now (age <= 1h, score = 0.5 + 0.3 = 0.8 >= 0.7)
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=10_000_000,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     downloader = MockDownloader(base_resource)
     storage = MockStorage(existing_files={"remote_file.zip": existing_file})
@@ -189,7 +181,7 @@ async def test_resolve_file_info_existing_file_trusted_no_overwrite(
     )
     task = DownloadTask(params, downloader=downloader, storage=storage)
 
-    resolved = await task._resolve_file_info()
+    await task._resolve_file_info()
 
     assert task._status == EDownloadStatus.COMPLETED
     assert task._dl_stats.bytes_downloaded == 10_000_000
@@ -200,7 +192,7 @@ async def test_resolve_file_info_existing_file_untrusted_no_overwrite_raises(
     tmp_path, base_resource
 ):
     # File created 60 days ago (score = 0.50 < min_trust_score 0.70)
-    old_time = datetime.now(timezone.utc) - timedelta(days=60)
+    old_time = datetime.now(UTC) - timedelta(days=60)
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=10_000_000,
@@ -223,11 +215,9 @@ async def test_resolve_file_info_existing_file_untrusted_no_overwrite_raises(
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_untrusted_with_overwrite(
-    tmp_path, base_resource
-):
+async def test_resolve_file_info_existing_file_untrusted_with_overwrite(tmp_path, base_resource):
     # File created 60 days ago (score = 0.50), but overwrite_existing=True
-    old_time = datetime.now(timezone.utc) - timedelta(days=60)
+    old_time = datetime.now(UTC) - timedelta(days=60)
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=10_000_000,
@@ -255,7 +245,7 @@ async def test_resolve_file_info_existing_file_size_mismatch_no_overwrite_raises
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=5_000_000,  # Half size
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     downloader = MockDownloader(base_resource)
     storage = MockStorage(existing_files={"remote_file.zip": existing_file})
@@ -291,9 +281,7 @@ async def test_resolve_file_info_empty_resources_raises_error(tmp_path):
 
 @pytest.mark.asyncio
 async def test_resolve_file_info_downloader_exception_propagates(tmp_path):
-    downloader = MockDownloader(
-        exc_to_raise=CommunicationError("DNS Resolution failed")
-    )
+    downloader = MockDownloader(exc_to_raise=CommunicationError("DNS Resolution failed"))
     storage = MockStorage()
     params = DownloadTaskParams(
         url="https://example.com/error.zip",
@@ -306,4 +294,3 @@ async def test_resolve_file_info_downloader_exception_propagates(tmp_path):
 
     assert task._status == EDownloadStatus.ERROR
     assert isinstance(task._last_error, CommunicationError)
-

@@ -1,17 +1,19 @@
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator
+import os
+from collections.abc import AsyncIterable
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
+
 import aiofiles
 import aiofiles.os
-import os
-import errno
+
+from sDownload.exceptions import StorageNotFoundError
+from sDownload.interfaces.models import StoredFileInfo
 from sDownload.interfaces.protocols import (
     FileRangeParams,
     FileStorageProtocol,
 )
-from sDownload.interfaces.models import StoredFileInfo
-from sDownload.exceptions import StorageNotFoundError
+
 from .os_error_mapper import map_os_error
 
 
@@ -78,9 +80,7 @@ class LocalStorage(FileStorageProtocol):
                 info = StoredFileInfo(
                     key=path.name,
                     size_bytes=stat.st_size,
-                    created_at=datetime.fromtimestamp(
-                        stat.st_mtime, tz=timezone.utc
-                    ),
+                    created_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                 )
                 files.append(info)
             return files
@@ -96,16 +96,14 @@ class LocalStorage(FileStorageProtocol):
         return StoredFileInfo(
             key=key,
             size_bytes=stat.st_size,
-            created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            created_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         )
 
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
         configs = [FileRangeParams(key=k) for k in source_keys]
         await self.merge_ranges(configs, dest_key)
 
-    async def merge_ranges(
-        self, source_configs: list[FileRangeParams], dest_key: str
-    ) -> None:
+    async def merge_ranges(self, source_configs: list[FileRangeParams], dest_key: str) -> None:
         dest_path = self.storage_dir / dest_key
         operation_buffer_size = self.io_buffer_size
 
@@ -133,10 +131,7 @@ class LocalStorage(FileStorageProtocol):
 
                         while True:
                             read_size = operation_buffer_size
-                            if (
-                                remaining_to_read is not None
-                                and remaining_to_read < read_size
-                            ):
+                            if remaining_to_read is not None and remaining_to_read < read_size:
                                 read_size = remaining_to_read
 
                             chunk = await src_file.read(read_size)

@@ -1,11 +1,10 @@
-import pytest
-import asyncio
 from unittest.mock import MagicMock
+
 from sDownload.interfaces.models import ChunkRange
 from sDownload.services.downloader_manager.chunk_utils.common import (
+    create_succession_stop_callback,
     format_chunk_file_name,
     get_effective_range_info,
-    create_succession_stop_callback,
 )
 
 

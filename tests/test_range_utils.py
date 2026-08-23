@@ -30,11 +30,7 @@ def test_partial_cache_fill_gaps():
     assert ChunkRange(20, 45) in ranges
     assert ChunkRange(163, None) in ranges
     total_bytes = sum(
-        (
-            (range.end - range.start + 1)
-            if range.end is not None
-            else total_bytes - range.start
-        )
+        ((range.end - range.start + 1) if range.end is not None else total_bytes - range.start)
         for range in ranges
     )
     assert total_bytes == 200
@@ -68,11 +64,7 @@ def test_common_case():
         ChunkRange(86533016, None),
     ]
     total_bytes = sum(
-        (
-            (range.end - range.start + 1)
-            if range.end is not None
-            else 108166270 - range.start
-        )
+        ((range.end - range.start + 1) if range.end is not None else 108166270 - range.start)
         for range in ranges
     )
     assert total_bytes == 108166270

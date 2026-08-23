@@ -74,21 +74,16 @@ async def _resolve_file_info(self) -> None:
     """
     # 1. Busca os metadados
     self._resource_info = await self._downloader.get_file_info(self._params.url)
-        
+
     # 2. Define o nome do arquivo final
     self._file_name = (
-        self._params.file_name or 
-        self._resource_info.file_name or 
-        "downloaded_file.bin"
+        self._params.file_name or self._resource_info.file_name or "downloaded_file.bin"
     )
-    
+
     # 3. Validação de segurança sobre conexões paralelas
     self._use_chunked = self._params.use_chunked
     if self._use_chunked and not self._resource_info.server_accept_ranges:
-        logger.warning(
-            f"O servidor não suporta download em partes. "
-            f"Forçando modo single-chunk."
-        )
+        logger.warning(f"O servidor não suporta download em partes. Forçando modo single-chunk.")
         self._use_chunked = False
 ```
 

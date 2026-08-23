@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -13,16 +12,16 @@ class DownloadTaskParams:
 
     url: str
     dest_dir: str
-    file_name: Optional[str] = None
+    file_name: str | None = None
 
     # Performance & Behavior
     max_conn: int = 4
     max_conn_per_server: int = 1
-    target_speed_bytes: Optional[int] = None
+    target_speed_bytes: int | None = None
     overwrite_existing: bool = False
     min_trust_score: float = 0.7
     enable_recovery: bool = True
     use_chunked: bool = True
 
     # Common Headers
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)

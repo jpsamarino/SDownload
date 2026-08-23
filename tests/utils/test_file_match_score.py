@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta, timezone
-from typing import AsyncIterable, Optional
+from collections.abc import AsyncIterable
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
-from sDownload.interfaces.models import StoredFileInfo, FileMatchScore
+from sDownload.interfaces.models import FileMatchScore, StoredFileInfo
 from sDownload.interfaces.protocols import FileStorageProtocol
 from sDownload.utils import calculate_file_match_score
 
@@ -11,7 +12,7 @@ class DummyStorage(FileStorageProtocol):
     def __init__(self, files: dict[str, StoredFileInfo] | None = None):
         self.files = files or {}
 
-    async def get_data_info(self, key: str) -> Optional[StoredFileInfo]:
+    async def get_data_info(self, key: str) -> StoredFileInfo | None:
         return self.files.get(key)
 
     async def save_binary_data(self, key: str, data: AsyncIterable[bytes]):
@@ -56,7 +57,7 @@ async def test_calculate_file_match_score_non_existent_file():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_size_mismatch():
-    now = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     info = StoredFileInfo(
         key="file.zip",
         size_bytes=500,
@@ -79,7 +80,7 @@ async def test_calculate_file_match_score_size_mismatch():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_within_1_hour():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # File created 30 minutes ago
     file_time = ref_time - timedelta(minutes=30)
     info = StoredFileInfo(
@@ -105,7 +106,7 @@ async def test_calculate_file_match_score_within_1_hour():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_within_24_hours():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # File created 5 hours ago
     file_time = ref_time - timedelta(hours=5)
     info = StoredFileInfo(
@@ -130,7 +131,7 @@ async def test_calculate_file_match_score_within_24_hours():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_within_7_days():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # File created 3 days ago
     file_time = ref_time - timedelta(days=3)
     info = StoredFileInfo(
@@ -155,7 +156,7 @@ async def test_calculate_file_match_score_within_7_days():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_very_old_file():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # File created 60 days ago
     file_time = ref_time - timedelta(days=60)
     info = StoredFileInfo(
@@ -180,7 +181,7 @@ async def test_calculate_file_match_score_very_old_file():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_newer_than_remote():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # Remote modified 2 days ago
     remote_time = ref_time - timedelta(days=2)
     # Local downloaded 1 hour ago
@@ -208,7 +209,7 @@ async def test_calculate_file_match_score_newer_than_remote():
 
 @pytest.mark.asyncio
 async def test_calculate_file_match_score_older_than_remote():
-    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
     # Local downloaded 3 days ago
     local_time = ref_time - timedelta(days=3)
     # Remote modified yesterday
@@ -285,7 +286,7 @@ async def test_calculate_file_match_score_real_filesystem_lifecycle(tmp_path):
     assert result_fresh.score == pytest.approx(0.80)
 
     # 3. Check with remote Last-Modified older than local file (score = 1.0)
-    remote_past = datetime.now(timezone.utc) - timedelta(days=2)
+    remote_past = datetime.now(UTC) - timedelta(days=2)
     result_past = await calculate_file_match_score(
         storage=storage,
         file_name=file_name,
@@ -296,7 +297,7 @@ async def test_calculate_file_match_score_real_filesystem_lifecycle(tmp_path):
     assert "newer than remote" in result_past.reason
 
     # 4. Check with remote Last-Modified newer than local file (score = 0.0)
-    remote_future = datetime.now(timezone.utc) + timedelta(hours=2)
+    remote_future = datetime.now(UTC) + timedelta(hours=2)
     result_future = await calculate_file_match_score(
         storage=storage,
         file_name=file_name,
@@ -348,4 +349,3 @@ async def test_calculate_file_match_score_real_filesystem_size_mismatch(tmp_path
     # 3. Clean up
     await storage.delete_data(file_name)
     assert not (tmp_path / file_name).exists()
-

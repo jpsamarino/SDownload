@@ -1,8 +1,7 @@
-from typing import Optional
-from .protocol import ResourceExtractorProtocol, DiscoveryMethod
-from .webdav_extractor import WebDavExtractor
 from .json_extractor import JsonExtractor
+from .protocol import DiscoveryMethod, ResourceExtractorProtocol
 from .text_pattern_extractor import TextPatternExtractor
+from .webdav_extractor import WebDavExtractor
 
 
 class ExtractorFactory:
@@ -19,7 +18,7 @@ class ExtractorFactory:
     @classmethod
     def get_extractor(
         cls, content_type: str, method: DiscoveryMethod
-    ) -> Optional[ResourceExtractorProtocol]:
+    ) -> ResourceExtractorProtocol | None:
         """
         Returns the appropriate Parser for the given response metadata.
         """

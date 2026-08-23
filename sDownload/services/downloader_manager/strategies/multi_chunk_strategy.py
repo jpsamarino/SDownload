@@ -1,9 +1,9 @@
 from sDownload.interfaces.models import (
-    ChunkRange,
+    AnyStrategyAction,
     ChunkDownloadStats,
+    ChunkRange,
     DownloadStats,
     StrategyAction,
-    AnyStrategyAction,
 )
 from sDownload.interfaces.protocols import DownloadStrategyProtocol
 from sDownload.utils import calculate_ranges

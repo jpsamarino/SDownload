@@ -1,18 +1,18 @@
-import pytest
-import asyncio
 import json
-from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime
-from sDownload.services.downloader_manager.recovery_download import (
-    RecoveryDownload,
-    DownloadInfo,
-)
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from sDownload.interfaces.models import (
-    ResourceInfo,
     ChunkDownloadStats,
     ChunkRange,
-    StoredFileInfo,
     EDownloadStatus,
+    ResourceInfo,
+    StoredFileInfo,
+)
+from sDownload.services.downloader_manager.recovery_download import (
+    RecoveryDownload,
 )
 
 
@@ -65,9 +65,7 @@ async def test_save_info_delayed_deletion(recovery_service, mock_storage):
     )
     stats1.bytes_downloaded = 200
 
-    stats2 = ChunkDownloadStats(
-        chunk_file_name="c2.tmp", range=ChunkRange(200, 399), file_size=200
-    )
+    stats2 = ChunkDownloadStats(chunk_file_name="c2.tmp", range=ChunkRange(200, 399), file_size=200)
     stats2.bytes_downloaded = 100  # Stats says 100
 
     stats3 = ChunkDownloadStats(
@@ -77,17 +75,11 @@ async def test_save_info_delayed_deletion(recovery_service, mock_storage):
 
     def mock_get_info(key):
         if key == "c1.tmp":
-            return StoredFileInfo(
-                key="c1.tmp", size_bytes=200, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c1.tmp", size_bytes=200, created_at=datetime.now())
         if key == "c2.tmp":
-            return StoredFileInfo(
-                key="c2.tmp", size_bytes=50, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c2.tmp", size_bytes=50, created_at=datetime.now())
         if key == "c3.tmp":
-            return StoredFileInfo(
-                key="c3.tmp", size_bytes=50, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c3.tmp", size_bytes=50, created_at=datetime.now())
         return None
 
     mock_storage.get_data_info.side_effect = mock_get_info
@@ -129,14 +121,10 @@ async def test_save_info_with_reduction_and_filter(recovery_service, mock_storag
     # Chunk 2: Partial (500 bytes on disk) -> Should save if >= 100 bytes (min_chunk_size)
     # Chunk 3: Partial (50 bytes on disk) -> Should filter out because 50 < 100
 
-    stats1 = ChunkDownloadStats(
-        chunk_file_name="c1.tmp", range=ChunkRange(0, 199), file_size=200
-    )
+    stats1 = ChunkDownloadStats(chunk_file_name="c1.tmp", range=ChunkRange(0, 199), file_size=200)
     stats1.bytes_downloaded = 200
 
-    stats2 = ChunkDownloadStats(
-        chunk_file_name="c2.tmp", range=ChunkRange(200, 999), file_size=800
-    )
+    stats2 = ChunkDownloadStats(chunk_file_name="c2.tmp", range=ChunkRange(200, 999), file_size=800)
     stats2.bytes_downloaded = 500
 
     stats3 = ChunkDownloadStats(
@@ -148,17 +136,11 @@ async def test_save_info_with_reduction_and_filter(recovery_service, mock_storag
     # Mock storage info
     def mock_get_info_reduction(key):
         if key == "c1.tmp":
-            return StoredFileInfo(
-                key="c1.tmp", size_bytes=200, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c1.tmp", size_bytes=200, created_at=datetime.now())
         if key == "c2.tmp":
-            return StoredFileInfo(
-                key="c2.tmp", size_bytes=500, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c2.tmp", size_bytes=500, created_at=datetime.now())
         if key == "c3.tmp":
-            return StoredFileInfo(
-                key="c3.tmp", size_bytes=50, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c3.tmp", size_bytes=50, created_at=datetime.now())
         return None
 
     mock_storage.get_data_info.side_effect = mock_get_info_reduction
@@ -216,9 +198,7 @@ async def test_load_info_success(recovery_service, mock_storage):
         if key == ".sdown_resume_unique_id_123.json":
             return StoredFileInfo(key=key, size_bytes=100, created_at=datetime.now())
         if key == "c1.tmp":
-            return StoredFileInfo(
-                key="c1.tmp", size_bytes=200, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c1.tmp", size_bytes=200, created_at=datetime.now())
         return None
 
     mock_storage.get_data_info.side_effect = mock_get_info_success
@@ -257,9 +237,7 @@ async def test_load_info_validation_failure(recovery_service, mock_storage):
         if key == ".sdown_resume_unique_id_123.json":
             return StoredFileInfo(key=key, size_bytes=100, created_at=datetime.now())
         if key == "c1.tmp":
-            return StoredFileInfo(
-                key="c1.tmp", size_bytes=100, created_at=datetime.now()
-            )
+            return StoredFileInfo(key="c1.tmp", size_bytes=100, created_at=datetime.now())
         return None
 
     mock_storage.get_data_info.side_effect = mock_get_info_failure

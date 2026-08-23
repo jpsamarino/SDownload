@@ -1,20 +1,20 @@
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
+
+from sDownload.file_system.local_storage import LocalStorage
+from sDownload.interfaces.models import (
+    ChunkDownloadStats,
+    ChunkRange,
+    EDownloadStatus,
+)
+from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
 from sDownload.services.downloader_manager.chunk_manager import (
     ChunkManager,
     ChunkTaskContext,
 )
-from sDownload.interfaces.models import (
-    ChunkRange,
-    EDownloadStatus,
-    ChunkDownloadStats,
-)
-from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
-
-from sDownload.file_system.local_storage import LocalStorage
-from datetime import datetime
 
 
 async def iter_helper(data):
@@ -47,8 +47,8 @@ async def mock_download_generator(size, speed_limit=None):
 @pytest.fixture
 def mock_downloader():
     downloader = MagicMock()
-    downloader.download_chunk.side_effect = (
-        lambda url, start, end: mock_download_generator(end - start + 1)
+    downloader.download_chunk.side_effect = lambda url, start, end: mock_download_generator(
+        end - start + 1
     )
     return downloader
 
@@ -131,12 +131,8 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
             ChunkDownloadStats,
         )
 
-        manager._chunks_stats[r1] = ChunkDownloadStats(
-            "c1", r1, 10, 11, EDownloadStatus.PENDING
-        )
-        manager._chunks_stats[r2] = ChunkDownloadStats(
-            "c2", r2, 10, 11, EDownloadStatus.PENDING
-        )
+        manager._chunks_stats[r1] = ChunkDownloadStats("c1", r1, 10, 11, EDownloadStatus.PENDING)
+        manager._chunks_stats[r2] = ChunkDownloadStats("c2", r2, 10, 11, EDownloadStatus.PENDING)
 
         # Add tasks manually to avoid complex mocking of start_chunk calling _download_chunk
 
@@ -147,12 +143,8 @@ async def test_wait_for_first_completed_chunk(chunk_manager):
             _fake_download(None, None, manager._chunks_stats[r2], None, duration=0.5)
         )  # Slow
 
-        manager._chunks_tasks[r1] = ChunkTaskContext(
-            task=t1, init_signal=asyncio.Event()
-        )
-        manager._chunks_tasks[r2] = ChunkTaskContext(
-            task=t2, init_signal=asyncio.Event()
-        )
+        manager._chunks_tasks[r1] = ChunkTaskContext(task=t1, init_signal=asyncio.Event())
+        manager._chunks_tasks[r2] = ChunkTaskContext(task=t2, init_signal=asyncio.Event())
 
     start_time = asyncio.get_running_loop().time()
     results = await manager.wait_for_first_completed_chunk(timeout=1.0)
@@ -574,12 +566,8 @@ async def test_chunk_manager_merge_with_overlaps(chunk_manager, temp_storage):
     s2 = chunk_manager._register_chunk_stats(c2_range)
     s3 = chunk_manager._register_chunk_stats(c3_range)
 
-    await temp_storage.save_binary_data(
-        s1.chunk_file_name, iter_helper(b"0123456789ABCDE")
-    )
-    await temp_storage.save_binary_data(
-        s2.chunk_file_name, iter_helper(b"ABCDEfghijklmno")
-    )
+    await temp_storage.save_binary_data(s1.chunk_file_name, iter_helper(b"0123456789ABCDE"))
+    await temp_storage.save_binary_data(s2.chunk_file_name, iter_helper(b"ABCDEfghijklmno"))
     await temp_storage.save_binary_data(s3.chunk_file_name, iter_helper(b"klmnoPQRST"))
 
     s1.set_status(EDownloadStatus.COMPLETED)
@@ -654,9 +642,7 @@ async def test_cleanup_comprehensive(chunk_manager, temp_storage):
 async def test_chunk_manager_monitor_stops_on_cancel_chunk(chunk_manager):
     """Monitor should be stopped/None when the only active chunk is cancelled"""
 
-    async def fast_mock(
-        downloader, storage, stats, download_url, throttler=None, init_signal=None
-    ):
+    async def fast_mock(downloader, storage, stats, download_url, throttler=None, init_signal=None):
         if init_signal:
             init_signal.set()
         await asyncio.sleep(5.0)
@@ -679,9 +665,7 @@ async def test_chunk_manager_monitor_stops_on_cancel_chunk(chunk_manager):
 async def test_chunk_manager_monitor_stops_on_cancel_all_chunks(chunk_manager):
     """Monitor should be stopped/None when all chunks are cancelled via cancel_all_chunks"""
 
-    async def fast_mock(
-        downloader, storage, stats, download_url, throttler=None, init_signal=None
-    ):
+    async def fast_mock(downloader, storage, stats, download_url, throttler=None, init_signal=None):
         if init_signal:
             init_signal.set()
         await asyncio.sleep(5.0)
@@ -707,9 +691,7 @@ async def test_chunk_manager_context_manager_cleanup(
     chunk_manager_params, mock_downloader, temp_storage
 ):
     """ChunkManager should cleanup automatically when used as an async context manager"""
-    async with ChunkManager(
-        chunk_manager_params, mock_downloader, temp_storage
-    ) as manager:
+    async with ChunkManager(chunk_manager_params, mock_downloader, temp_storage) as manager:
         manager._cleaned_up = False  # Ensure it's not cleaned up yet
 
     assert manager._cleaned_up is True
@@ -721,9 +703,7 @@ async def test_chunk_manager_context_manager_with_error(
 ):
     """ChunkManager should cleanup even if an exception occurs inside the context"""
     try:
-        async with ChunkManager(
-            chunk_manager_params, mock_downloader, temp_storage
-        ) as manager:
+        async with ChunkManager(chunk_manager_params, mock_downloader, temp_storage) as manager:
             raise ValueError("Test Error")
     except ValueError:
         pass
@@ -760,8 +740,7 @@ async def test_chunk_manager_del_defensive_cleanup(
     # 1. Check if the error message was printed
     captured = capsys.readouterr()
     assert (
-        f"ERROR: ChunkManager for '{name}' was destroyed without calling cleanup()"
-        in captured.out
+        f"ERROR: ChunkManager for '{name}' was destroyed without calling cleanup()" in captured.out
     )
 
     # 2. Check if the task was cancelled
@@ -771,9 +750,7 @@ async def test_chunk_manager_del_defensive_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_init_with_recovered_stats(
-    chunk_manager_params, mock_downloader, temp_storage
-):
+async def test_init_with_recovered_stats(chunk_manager_params, mock_downloader, temp_storage):
     r1 = ChunkRange(0, 1000)
     recovered = [
         ChunkDownloadStats(

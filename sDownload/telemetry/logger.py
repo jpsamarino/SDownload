@@ -1,9 +1,8 @@
 import logging
 import threading
-from typing import Optional
 
 _LIB_LOGGER_NAME = "sDownload"
-_LIB_LOGGER_SINGLETON: Optional[logging.Logger] = None
+_LIB_LOGGER_SINGLETON: logging.Logger | None = None
 _LOGGER_LOCK = threading.Lock()
 
 
@@ -17,7 +16,7 @@ def get_logger() -> logging.Logger:
                 if not logger.hasHandlers():
                     handler = logging.StreamHandler()
                     formatter = logging.Formatter(
-                        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
                     )
                     handler.setFormatter(formatter)
                     logger.addHandler(handler)

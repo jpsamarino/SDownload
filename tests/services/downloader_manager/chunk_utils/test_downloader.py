@@ -1,16 +1,18 @@
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from sDownload.exceptions import IntegrityError
+from sDownload.interfaces.models import (
+    ChunkDownloadStats,
+    ChunkRange,
+    EDownloadStatus,
+)
 from sDownload.services.downloader_manager.chunk_utils.downloader import (
     download_chunk_supervised,
 )
-from sDownload.exceptions import IntegrityError
 from sDownload.services.downloader_manager.throttling import get_default_throttler
-from sDownload.interfaces.models import (
-    ChunkRange,
-    ChunkDownloadStats,
-    EDownloadStatus,
-)
 
 
 @pytest.fixture
@@ -37,9 +39,7 @@ def chunk_range():
 
 @pytest.fixture
 def stats(chunk_range):
-    return ChunkDownloadStats(
-        chunk_file_name="test_chunk.bin", range=chunk_range, file_size=None
-    )
+    return ChunkDownloadStats(chunk_file_name="test_chunk.bin", range=chunk_range, file_size=None)
 
 
 @pytest.fixture
@@ -71,9 +71,7 @@ async def test_download_chunk_success(mock_downloader, mock_storage, stats, thro
 
 
 @pytest.mark.asyncio
-async def test_download_chunk_size_mismatch(
-    mock_downloader, mock_storage, stats, throttler
-):
+async def test_download_chunk_size_mismatch(mock_downloader, mock_storage, stats, throttler):
     """Scenario 2: Partial Download Error (Size Mismatch)"""
     download_url = "http://example.com/file"
     # Set expected size to 100
@@ -91,9 +89,7 @@ async def test_download_chunk_size_mismatch(
 
 
 @pytest.mark.asyncio
-async def test_download_chunk_cancellation_simple(
-    mock_downloader, mock_storage, stats, throttler
-):
+async def test_download_chunk_cancellation_simple(mock_downloader, mock_storage, stats, throttler):
     """Scenario 3: Simple Cancellation"""
     download_url = "http://example.com/file"
 
@@ -134,9 +130,7 @@ async def test_download_chunk_cancellation_goal_reached(
 
 
 @pytest.mark.asyncio
-async def test_download_chunk_generic_error(
-    mock_downloader, mock_storage, stats, throttler
-):
+async def test_download_chunk_generic_error(mock_downloader, mock_storage, stats, throttler):
     """Scenario 5: Network/Generic Error"""
     download_url = "http://example.com/file"
 
@@ -155,15 +149,13 @@ async def test_download_chunk_generic_error(
 
 
 @pytest.mark.asyncio
-async def test_download_chunk_storage_full(
-    mock_downloader, mock_storage, stats, throttler
-):
+async def test_download_chunk_storage_full(mock_downloader, mock_storage, stats, throttler):
     """Scenario 6: Storage Error (Disk Full)"""
     download_url = "http://example.com/file"
     mock_downloader.download_chunk.return_value = async_gen([b"data"])
 
     # Simulate storage error
-    mock_storage.save_binary_data.side_effect = IOError("No space left on device")
+    mock_storage.save_binary_data.side_effect = OSError("No space left on device")
 
     with pytest.raises(IOError, match="No space left on device"):
         await download_chunk_supervised(

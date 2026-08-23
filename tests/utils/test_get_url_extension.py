@@ -1,4 +1,3 @@
-import pytest
 from sDownload.utils.get_url_extension import get_url_extension
 
 

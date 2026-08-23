@@ -1,15 +1,16 @@
 import asyncio
 import errno
+
 import pytest
-from unittest.mock import MagicMock
-from sDownload.file_system.local_storage import LocalStorage
-from sDownload.file_system.os_error_mapper import map_os_error
+
 from sDownload.exceptions import (
+    StorageError,
+    StorageFullError,
     StorageNotFoundError,
     StoragePermissionError,
-    StorageFullError,
-    StorageError,
 )
+from sDownload.file_system.local_storage import LocalStorage
+from sDownload.file_system.os_error_mapper import map_os_error
 
 
 @pytest.fixture
@@ -64,9 +65,8 @@ def test_map_os_error_unrecognized():
 async def test_storage_cancellation_flow(storage, tmp_path):
     # This verifies that if a storage operation is cancelled, it bubbles up correctly
     key = "cancel_test.bin"
-    path = tmp_path / key
+    tmp_path / key
 
-    import aiofiles
     from unittest.mock import patch
 
     with patch("aiofiles.open") as mock_open:

@@ -1,4 +1,3 @@
-import pytest
 from sDownload.http_client.extractors.webdav_extractor import WebDavExtractor
 
 
@@ -27,16 +26,16 @@ def test_webdav_extractor_parses_xml_structure():
     </d:multistatus>
     """
     base_url = "http://localhost/public.php/dav/files/user/"
-    
+
     links = extractor.extract(xml_content, base_url)
-    
+
     # 1. Should find folder1 as a directory
-    folder1 = next(l for l in links if "folder1" in l.url)
+    folder1 = next(link for link in links if "folder1" in link.url)
     assert folder1.is_dir is True
     assert folder1.url == "http://localhost/public.php/dav/files/user/folder1/"
-    
+
     # 2. Should find file.txt as a file
-    file1 = next(l for l in links if "file.txt" in l.url)
+    file1 = next(link for link in links if "file.txt" in link.url)
     assert file1.is_dir is False
     assert file1.url == "http://localhost/public.php/dav/files/user/file.txt"
 

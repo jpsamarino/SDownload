@@ -1,4 +1,3 @@
-import pytest
 from sDownload.utils.is_navigable import is_navigable
 from sDownload.utils.navigable_config import navigable_extensions
 

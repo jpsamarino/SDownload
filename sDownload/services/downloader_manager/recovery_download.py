@@ -1,22 +1,20 @@
+import asyncio
 import json
 import logging
-import asyncio
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import List, Optional
-
-from sDownload.utils import json_dumps, parse_json_date
 
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
-    EDownloadStatus,
     ChunkRange,
+    DownloadInfo,
+    EDownloadStatus,
     RecoveryChunkDTO,
     RecoveryStateDTO,
-    DownloadInfo,
 )
 from sDownload.interfaces.protocols import FileStorageProtocol
+from sDownload.utils import json_dumps, parse_json_date
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +30,7 @@ class RecoveryDownload:
         self,
         file_id: str,
         total_file_size: int,
-        stats_list: List[ChunkDownloadStats],
+        stats_list: list[ChunkDownloadStats],
         min_chunk_size: int = 1024 * 1024,  # Default 1MB filter
         delete_useless_chunks: bool = True,
     ) -> None:
@@ -40,16 +38,14 @@ class RecoveryDownload:
             logger.warning("Cannot save recovery info: missing file_id")
             return
 
-        dto_chunks: List[RecoveryChunkDTO] = []
-        chunks_to_delete: List[str] = []
+        dto_chunks: list[RecoveryChunkDTO] = []
+        chunks_to_delete: list[str] = []
 
         chunk_names = [s.chunk_file_name for s in stats_list]
-        infos = await asyncio.gather(
-            *(self._storage.get_data_info(name) for name in chunk_names)
-        )
+        infos = await asyncio.gather(*(self._storage.get_data_info(name) for name in chunk_names))
 
         info_map = {
-            name: info.size_bytes for name, info in zip(chunk_names, infos) if info
+            name: info.size_bytes for name, info in zip(chunk_names, infos, strict=False) if info
         }
 
         for stats in stats_list:
@@ -88,7 +84,7 @@ class RecoveryDownload:
             file_id=file_id,
             file_size=total_file_size,
             chunks=dto_chunks,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
 
         data_json = json_dumps(asdict(state_dto), indent=4)
@@ -114,7 +110,7 @@ class RecoveryDownload:
 
             await asyncio.gather(*(safe_delete(k) for k in chunks_to_delete))
 
-    async def load_info(self, file_id: str) -> Optional[DownloadInfo]:
+    async def load_info(self, file_id: str) -> DownloadInfo | None:
         recovery_key = self._get_recovery_key(file_id)
         recovery_info = await self._storage.get_data_info(recovery_key)
 
@@ -131,14 +127,12 @@ class RecoveryDownload:
                 content.decode("utf-8"), object_hook=lambda d: SimpleNamespace(**d)
             )
             c_names = [c.chunk_file_name for c in raw_data.chunks]
-            c_infos = await asyncio.gather(
-                *(self._storage.get_data_info(name) for name in c_names)
-            )
+            c_infos = await asyncio.gather(*(self._storage.get_data_info(name) for name in c_names))
             info_map = {
-                name: info.size_bytes for name, info in zip(c_names, c_infos) if info
+                name: info.size_bytes for name, info in zip(c_names, c_infos, strict=False) if info
             }
 
-            valid_stats: List[ChunkDownloadStats] = []
+            valid_stats: list[ChunkDownloadStats] = []
             for c in raw_data.chunks:
                 c_name = c.chunk_file_name
                 c_bytes = c.bytes
@@ -156,9 +150,7 @@ class RecoveryDownload:
                         )
                     )
                 else:
-                    logger.warning(
-                        "Saved chunk %s is missing or changed on disk", c_name
-                    )
+                    logger.warning("Saved chunk %s is missing or changed on disk", c_name)
 
             return DownloadInfo(
                 file_id=raw_data.file_id,
@@ -176,9 +168,7 @@ class RecoveryDownload:
         try:
             await self._storage.delete_data(recovery_key)
         except Exception as e:
-            logger.debug(
-                "Recovery info %s already gone or inaccessible: %s", recovery_key, e
-            )
+            logger.debug("Recovery info %s already gone or inaccessible: %s", recovery_key, e)
 
     async def purge_all(self, file_id: str) -> None:
         """

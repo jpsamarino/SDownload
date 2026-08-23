@@ -1,5 +1,6 @@
-from typing import Protocol, runtime_checkable
 from collections.abc import AsyncGenerator
+from typing import Protocol, runtime_checkable
+
 from sDownload.interfaces.models import ChunkDownloadStats
 
 

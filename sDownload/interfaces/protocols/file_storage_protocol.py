@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterable
-from typing import Protocol, NamedTuple
+from typing import NamedTuple, Protocol
+
 from sDownload.interfaces.models import StoredFileInfo
 
 
@@ -10,7 +11,6 @@ class FileRangeParams(NamedTuple):
 
 
 class FileStorageProtocol(Protocol):
-
     def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         """
         Retrieve binary data as an asynchronous stream (in chunks).
@@ -78,9 +78,7 @@ class FileStorageProtocol(Protocol):
         """
         ...
 
-    async def merge_ranges(
-        self, source_configs: list[FileRangeParams], dest_key: str
-    ) -> None:
+    async def merge_ranges(self, source_configs: list[FileRangeParams], dest_key: str) -> None:
         """
         Merge specific ranges of multiple files into a single destination file.
 

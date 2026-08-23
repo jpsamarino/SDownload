@@ -1,20 +1,20 @@
 import asyncio
 import time
+
 import pytest
-from sDownload.services.downloader_manager.throttling.token_bucket import (
-    TokenBucketThrottler,
-)
+
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
     ChunkRange,
+)
+from sDownload.services.downloader_manager.throttling.token_bucket import (
+    TokenBucketThrottler,
 )
 
 
 @pytest.fixture
 def stats():
-    return ChunkDownloadStats(
-        chunk_file_name="test.bin", range=ChunkRange(0, 1000), file_size=1001
-    )
+    return ChunkDownloadStats(chunk_file_name="test.bin", range=ChunkRange(0, 1000), file_size=1001)
 
 
 async def async_gen(data_list):
@@ -122,13 +122,13 @@ async def test_token_bucket_dynamic_speed_change(stats):
 
     async def changing_gen():
         # Phase 1: 5 chunks while unlimited
-        for i in range(5):
+        for _i in range(5):
             yield b"A"
             await asyncio.sleep(0)
         # Switch to limited mid-stream
         stats.target_speed_bps = 5  # 5 bps
         # Phase 2: 5 more chunks while limited
-        for i in range(5):
+        for _i in range(5):
             yield b"B"
             await asyncio.sleep(0)
 

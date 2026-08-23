@@ -1,9 +1,7 @@
 from typing import Protocol
-from sDownload.interfaces.models import URLConfig, DLManagerConfig
 
 
 class DownloaderManagerProtocol(Protocol):
-
     def add_url(self, urlConfig: str):
         pass
 

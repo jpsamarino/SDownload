@@ -1,5 +1,6 @@
 import re
-from .protocol import ResourceExtractorProtocol, ExtractedLink
+
+from .protocol import ExtractedLink, ResourceExtractorProtocol
 
 
 class JsonExtractor(ResourceExtractorProtocol):

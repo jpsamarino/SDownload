@@ -1,7 +1,8 @@
 import asyncio
-import time
 import logging
+import time
 from collections.abc import AsyncGenerator
+
 from sDownload.interfaces.models import ChunkDownloadStats
 from sDownload.interfaces.protocols import ThrottlerProtocol
 
@@ -62,10 +63,7 @@ class FixedWindowThrottler(ThrottlerProtocol):
                     expected = accumulated / target
 
                     if elapsed < expected:
-
-                        await asyncio.sleep(
-                            min(expected - elapsed, self.max_sleep_seconds)
-                        )
+                        await asyncio.sleep(min(expected - elapsed, self.max_sleep_seconds))
                         last_check = time.monotonic()
                     else:
                         last_check = now

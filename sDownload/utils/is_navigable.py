@@ -1,4 +1,4 @@
-from .navigable_config import navigable_extensions, navigable_content_types
+from .navigable_config import navigable_content_types, navigable_extensions
 
 
 def is_navigable(extension: str, content_type: str = "") -> bool | None:

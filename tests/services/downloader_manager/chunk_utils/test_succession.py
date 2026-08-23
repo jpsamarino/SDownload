@@ -1,14 +1,16 @@
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from sDownload.services.downloader_manager.chunk_utils.succession import (
-    run_chunk_succession,
-)
+
+import pytest
+
 from sDownload.exceptions import ChunkSuccessionError
 from sDownload.interfaces.models import (
-    ChunkRange,
     ChunkDownloadStats,
+    ChunkRange,
     EDownloadStatus,
+)
+from sDownload.services.downloader_manager.chunk_utils.succession import (
+    run_chunk_succession,
 )
 
 
@@ -126,7 +128,7 @@ async def test_succession_storage_error(mock_storage, stats_pre, stats_succ):
     stats_pre.limit_qt_bytes = 51
     stats_pre.bytes_downloaded = 60
 
-    mock_storage.move_data.side_effect = IOError("Disk full")
+    mock_storage.move_data.side_effect = OSError("Disk full")
 
     with pytest.raises(IOError, match="Disk full"):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
@@ -156,12 +158,10 @@ async def test_succession_invalid_successor_state(mock_storage, stats_pre, stats
     """Scenario 7: Successor in invalid state raises RuntimeError"""
     stats_succ.set_status(EDownloadStatus.PENDING)
 
-    with pytest.raises(
-        ValueError, match="Successor is not in AWAITING_SUCCESSION state"
-    ):
+    with pytest.raises(ValueError, match="Successor is not in AWAITING_SUCCESSION state"):
         await run_chunk_succession(mock_storage, stats_pre, stats_succ, None)
-    
-    # Note: stats_succ.status is NOT changed here because the error happens 
+
+    # Note: stats_succ.status is NOT changed here because the error happens
     # before the try/except block that calls set_error
 
 

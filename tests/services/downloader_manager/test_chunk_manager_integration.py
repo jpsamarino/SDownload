@@ -1,24 +1,23 @@
-from sDownload.interfaces.models import ChunkDownloadStats
 import asyncio
-import logging
-from collections.abc import AsyncIterable
-from unittest.mock import AsyncMock, MagicMock
+import contextlib
+from unittest.mock import MagicMock
+
 import pytest
-from datetime import datetime, timezone
 
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
-from sDownload.services.downloader_manager.chunk_manager import ChunkManager
+from sDownload.interfaces.models import (
+    ChunkDownloadStats,
+    ChunkRange,
+    EDownloadStatus,
+    HttpConfigModel,
+)
+from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
 from sDownload.interfaces.protocols import (
     DownloaderProtocol,
     FileStorageProtocol,
 )
-from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
-from sDownload.interfaces.models import (
-    ChunkRange,
-    HttpConfigModel,
-    EDownloadStatus,
-)
+from sDownload.services.downloader_manager.chunk_manager import ChunkManager
 
 
 @pytest.fixture
@@ -32,9 +31,7 @@ def setup_downloader_and_config(nginx_custom):
         path = "limited_speed" if limit_speed else "default"
         config = HttpConfigModel(timeout_connect_s=20.0)
         downloader = HttpxDownloader(config)
-        result = await downloader.get_file_info(
-            f"{nginx_custom['http']}/{path}/{file_name}"
-        )
+        result = await downloader.get_file_info(f"{nginx_custom['http']}/{path}/{file_name}")
 
         chunk_params = ChunkManagerParams(
             file_name=result.file_name,
@@ -53,9 +50,7 @@ def setup_downloader_and_config(nginx_custom):
 
 @pytest.mark.asyncio
 async def test_chunk_manager_with_nginx(setup_downloader_and_config, storage):
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -95,19 +90,14 @@ async def test_chunk_manager_cancel_chunks(setup_downloader_and_config, storage)
     await chunk_manager.wait_for_completed_chunks(0.5)
 
     assert is_cancelled is True
-    assert (
-        chunk_manager.stats.get(ChunkRange(0, 51200)).status
-        == EDownloadStatus.CANCELLED
-    )
+    assert chunk_manager.stats.get(ChunkRange(0, 51200)).status == EDownloadStatus.CANCELLED
     assert chunk_manager.get_downloaded_bytes() < chunk_params.file_size
 
     await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_wrong_partial_chunks_sizes(
-    setup_downloader_and_config, storage
-):
+async def test_chunk_manager_wrong_partial_chunks_sizes(setup_downloader_and_config, storage):
     setup = await setup_downloader_and_config()
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
@@ -119,10 +109,7 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(
 
     await chunk_manager.wait_for_completed_chunks(0.5)
 
-    assert (
-        chunk_manager.stats.get(ChunkRange(102390, 511990)).status
-        == EDownloadStatus.ERROR
-    )
+    assert chunk_manager.stats.get(ChunkRange(102390, 511990)).status == EDownloadStatus.ERROR
     await chunk_manager.cleanup()
 
 
@@ -178,7 +165,7 @@ async def test_chunk_manager_stats_tracking(setup_downloader_and_config, storage
 
     all_stats = chunk_manager.stats
     assert len(all_stats) == 2
-    for key, stat in all_stats.items():
+    for _key, stat in all_stats.items():
         assert stat.status == EDownloadStatus.COMPLETED
         assert stat.bytes_downloaded == stat.file_size
 
@@ -211,16 +198,14 @@ async def test_chunk_manager_cancel_all_chunks(setup_downloader_and_config, stor
     assert len(active) == 0
 
     all_stats = chunk_manager.stats
-    for key, stat in all_stats.items():
+    for _key, stat in all_stats.items():
         assert stat.status in [EDownloadStatus.CANCELLED]
 
     await chunk_manager.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_success_with_finished_chunks(
-    setup_downloader_and_config, storage
-):
+async def test_resize_chunk_success_with_finished_chunks(setup_downloader_and_config, storage):
     setup = await setup_downloader_and_config()
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
@@ -237,9 +222,7 @@ async def test_resize_chunk_success_with_finished_chunks(
     new_range = ChunkRange(0, 25599)
     chunk_manager.resize_chunk(original_range, new_range)
 
-    assert (
-        chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
 
     await chunk_manager.wait_for_completed_chunks(0.1)
 
@@ -253,9 +236,7 @@ async def test_resize_chunk_success_with_finished_chunks(
 
 
 @pytest.mark.asyncio
-async def test_resize_chunk_success_with_downloading_chunks(
-    setup_downloader_and_config, storage
-):
+async def test_resize_chunk_success_with_downloading_chunks(setup_downloader_and_config, storage):
     setup = await setup_downloader_and_config()
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
@@ -267,9 +248,7 @@ async def test_resize_chunk_success_with_downloading_chunks(
     new_range = ChunkRange(0, 25599)
     chunk_manager.resize_chunk(original_range, new_range)
 
-    assert (
-        chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
-    )
+    assert chunk_manager.stats.get(new_range).status == EDownloadStatus.AWAITING_SUCCESSION
 
     await chunk_manager.wait_for_completed_chunks(1)
 
@@ -388,9 +367,7 @@ async def test_resize_chunk_validation_error():
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_remove_chunk_integration(
-    setup_downloader_and_config, storage
-):
+async def test_chunk_manager_remove_chunk_integration(setup_downloader_and_config, storage):
     setup = await setup_downloader_and_config(file_name="file_1M.bin")
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
@@ -442,9 +419,7 @@ async def test_chunk_manager_remove_chunk_integration(
 
 @pytest.mark.asyncio
 async def test_chunk_manager_merge_basic(setup_downloader_and_config, storage):
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -477,9 +452,7 @@ async def test_chunk_manager_merge_basic(setup_downloader_and_config, storage):
 
 @pytest.mark.asyncio
 async def test_chunk_manager_merge_with_overlaps(setup_downloader_and_config, storage):
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -516,9 +489,7 @@ async def test_chunk_manager_merge_with_overlaps(setup_downloader_and_config, st
 
 @pytest.mark.asyncio
 async def test_chunk_manager_merge_after_resize(setup_downloader_and_config, storage):
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -556,13 +527,9 @@ async def test_chunk_manager_merge_after_resize(setup_downloader_and_config, sto
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_monitor_lifecycle_integration(
-    setup_downloader_and_config, storage
-):
+async def test_chunk_manager_monitor_lifecycle_integration(setup_downloader_and_config, storage):
     """Integration: Monitor should start when a chunk starts and stop when all finish"""
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
     chunk_manager = ChunkManager(chunk_params, downloader, storage)
@@ -597,9 +564,7 @@ async def test_chunk_manager_context_manager_lifecycle_integration(
     setup_downloader_and_config, storage
 ):
     """Integration: Full lifecycle using async context manager"""
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -629,9 +594,7 @@ async def test_chunk_manager_context_manager_external_cancel_integration(
     setup_downloader_and_config, storage
 ):
     """Integration: Verify cleanup runs even if the outer task is cancelled"""
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -652,10 +615,8 @@ async def test_chunk_manager_context_manager_external_cancel_integration(
 
     # External cancel
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     # Cleanup MUST have run
     assert inner_manager._cleaned_up is True
@@ -669,9 +630,7 @@ async def test_chunk_manager_context_manager_external_cancel_integration(
 @pytest.mark.asyncio
 async def test_chunk_manager_recovery_integration(setup_downloader_and_config, storage):
     """Integration: partial download, stop manager, resume with recovered stats"""
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 
@@ -714,20 +673,14 @@ async def test_chunk_manager_recovery_integration(setup_downloader_and_config, s
     listed_final = await storage.list_data()
     assert any(f.key == chunk_params.file_name for f in listed_final)
     # Check that temp files are gone after merge cleanup
-    chunk_files_after = [
-        f.key for f in listed_final if "file_100k.bin.sdownload" in f.key
-    ]
+    chunk_files_after = [f.key for f in listed_final if "file_100k.bin.sdownload" in f.key]
     assert len(chunk_files_after) == 0
 
 
 @pytest.mark.asyncio
-async def test_chunk_manager_cancel_and_restart_integration(
-    setup_downloader_and_config, storage
-):
+async def test_chunk_manager_cancel_and_restart_integration(setup_downloader_and_config, storage):
     """Integration: start, cancel, restart the same chunks, and merge"""
-    setup = await setup_downloader_and_config(
-        file_name="file_100k.bin", limit_speed=False
-    )
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
     chunk_params = setup["chunk_params"]
     downloader = setup["downloader"]
 

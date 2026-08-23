@@ -1,12 +1,11 @@
 import logging
-from sDownload.interfaces.protocols import FileStorageProtocol, FileRangeParams
+
+from sDownload.exceptions import ReconstructionError
 from sDownload.interfaces.models import ChunkDownloadStats, EDownloadStatus
+from sDownload.interfaces.protocols import FileRangeParams, FileStorageProtocol
 from sDownload.utils import calculate_optimal_coverage
 
 logger = logging.getLogger(__name__)
-
-
-from sDownload.exceptions import ReconstructionError
 
 
 async def reconstruct_file(
@@ -21,18 +20,14 @@ async def reconstruct_file(
     completed_stats = [s for s in stats_list if s.status == EDownloadStatus.COMPLETED]
 
     if not completed_stats:
-        raise ReconstructionError(
-            "No completed chunks available to reconstruct the file."
-        )
+        raise ReconstructionError("No completed chunks available to reconstruct the file.")
 
     ranges = [s.range for s in completed_stats]
 
     try:
         fragments = calculate_optimal_coverage(ranges, file_size=total_file_size)
     except Exception as e:
-        raise ReconstructionError(
-            f"Failed to calculate optimal coverage: {e}", original=e
-        ) from e
+        raise ReconstructionError(f"Failed to calculate optimal coverage: {e}", original=e) from e
 
     range_map = {s.range: s for s in completed_stats}
 

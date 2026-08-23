@@ -1,10 +1,9 @@
 import asyncio
 import logging
-from typing import Optional
 
 from sDownload.exceptions import (
-    ResourceNotFoundError,
     FileAlreadyExistsError,
+    ResourceNotFoundError,
 )
 from sDownload.file_system import LocalStorage
 from sDownload.http_client import HttpxDownloader
@@ -27,14 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadTask:
-
     def __init__(
         self,
         params: DownloadTaskParams,
         *,
-        strategy: Optional[DownloadStrategyProtocol] = None,
-        downloader: Optional[DownloaderProtocol] = None,
-        storage: Optional[FileStorageProtocol] = None,
+        strategy: DownloadStrategyProtocol | None = None,
+        downloader: DownloaderProtocol | None = None,
+        storage: FileStorageProtocol | None = None,
     ):
         self._params = params
         self._downloader = downloader or HttpxDownloader(
@@ -45,35 +43,35 @@ class DownloadTask:
             max_conn=params.max_conn,
             use_chunked_download=params.use_chunked,
         )
-        self._file_name: Optional[str] = params.file_name
-        self._resource_info: Optional[ResourceInfo] = None
-        self._dl_stats: Optional[DownloadStats] = None
-        self._controller_task: Optional[asyncio.Task] = None
+        self._file_name: str | None = params.file_name
+        self._resource_info: ResourceInfo | None = None
+        self._dl_stats: DownloadStats | None = None
+        self._controller_task: asyncio.Task | None = None
         self._pause_event = asyncio.Event()
         self._pause_event.set()
         self._status: EDownloadStatus = EDownloadStatus.PENDING
         self._use_chunked: bool = params.use_chunked
         self._max_conn: int = params.max_conn
-        self._last_error: Optional[Exception] = None
+        self._last_error: Exception | None = None
 
     @property
     def status(self) -> EDownloadStatus:
         return self._status
 
     @property
-    def stats(self) -> Optional[DownloadStats]:
+    def stats(self) -> DownloadStats | None:
         return self._dl_stats
 
     @property
-    def file_name(self) -> Optional[str]:
+    def file_name(self) -> str | None:
         return self._file_name
 
     @property
-    def resource_info(self) -> Optional[ResourceInfo]:
+    def resource_info(self) -> ResourceInfo | None:
         return self._resource_info
 
     @property
-    def last_error(self) -> Optional[Exception]:
+    def last_error(self) -> Exception | None:
         return self._last_error
 
     async def _resolve_file_info(self) -> ResourceInfo:
@@ -134,11 +132,7 @@ class DownloadTask:
                     raise FileAlreadyExistsError(self._file_name)
 
             # 3. Adapt chunking & concurrency to server capabilities
-            if (
-                not info.server_accept_ranges
-                or not info.file_size
-                or info.file_size <= 0
-            ):
+            if not info.server_accept_ranges or not info.file_size or info.file_size <= 0:
                 logger.info(
                     "Server does not support ranges or file size is unknown for %s. "
                     "Downgrading to single-stream download.",
@@ -157,9 +151,7 @@ class DownloadTask:
         except Exception as exc:
             self._status = EDownloadStatus.ERROR
             self._last_error = exc
-            logger.error(
-                "Failed to resolve file info for %s: %s", self._params.url, exc
-            )
+            logger.error("Failed to resolve file info for %s: %s", self._params.url, exc)
             raise
 
     async def start(self) -> None:
@@ -188,7 +180,7 @@ class DownloadTask:
         # wait until the download is done and execute finalize??
         ...
 
-    def set_target_speed(self, bytes_per_second: Optional[int]) -> None: ...
+    def set_target_speed(self, bytes_per_second: int | None) -> None: ...
 
     def _finalize(self) -> None:
         # merge all chunks into a single file
@@ -196,8 +188,7 @@ class DownloadTask:
         # update stats
         ...
 
-    async def _load_recovery_state(self) -> None:
-        ...
+    async def _load_recovery_state(self) -> None: ...
 
     async def _dl_controller(self) -> None:
         # control loop for download

@@ -1,5 +1,7 @@
 import socket
+
 import pytest
+
 from sDownload.utils.net import find_available_port
 
 

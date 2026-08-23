@@ -1,22 +1,23 @@
-import asyncio
-import re
 import logging
-from urllib.parse import urljoin, urlparse
-from collections.abc import AsyncGenerator, AsyncIterable
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+import re
 from collections import deque
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+
 import httpx
+
 from sDownload.exceptions import (
     FileIDMismatchError,
     ResourceInfoError,
 )
-from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.interfaces.models import HttpConfigModel, ResourceInfo
+from sDownload.interfaces.protocols import DownloaderProtocol
 from sDownload.utils import url_to_file_name
+
+from .extractors.protocol import ExtractedLink
 from .httpx_error_mapper import map_httpx_error
-from .resource_explorer import explore_resource, DiscoveryTask
-from .extractors.protocol import DiscoveryMethod, ExtractedLink
+from .resource_explorer import DiscoveryTask, explore_resource
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +35,13 @@ class HttpxDownloader(DownloaderProtocol):
         """
         Construct a proxy URL from SingleProxyConfig.
         """
-        auth = (
-            f"{spc.username}:{spc.password}@" if spc.username and spc.password else ""
-        )
+        auth = f"{spc.username}:{spc.password}@" if spc.username and spc.password else ""
         return f"{spc.protocol.value}://{auth}{spc.host}:{spc.port}"
 
     async def _get_client(self) -> httpx.AsyncClient:
         """
         Create and configure an httpx.AsyncClient per HttpConfigModel.
         """
-        proxies: dict[str, str] | None = None
         if self.config.proxy:
             mapping: dict[str, str] = {}
             for scheme in ("http", "https"):
@@ -51,7 +49,7 @@ class HttpxDownloader(DownloaderProtocol):
                 if spc:
                     mapping[f"{scheme}://"] = self._build_proxy_url(spc)
             if mapping:
-                proxies = mapping
+                pass
 
         return httpx.AsyncClient(
             headers=self.config.headers,
@@ -99,64 +97,58 @@ class HttpxDownloader(DownloaderProtocol):
 
     async def get_file_info(self, url: str) -> ResourceInfo:
         try:
-            async with await self._get_client() as client:
-                async with client.stream(
-                    "GET", url, headers={"Range": "bytes=0-0"}
-                ) as response:
-                    response.raise_for_status()
-                    headers = response.headers
-                    status_code = response.status_code
+            async with (
+                await self._get_client() as client,
+                client.stream("GET", url, headers={"Range": "bytes=0-0"}) as response,
+            ):
+                response.raise_for_status()
+                headers = response.headers
+                status_code = response.status_code
 
-                    content_range = headers.get("Content-Range")
-                    try:
-                        if (
-                            status_code == 206
-                            and content_range
-                            and "/" in content_range
-                        ):
-                            full_size = int(content_range.split("/", 1)[1])
-                            resumable = True
-                        else:
-                            full_size = int(headers.get("Content-Length", 0))
-                            resumable = False
-                    except Exception as size_err:
-                        raise ResourceInfoError(
-                            url, "Failed to parse file size", size_err
-                        ) from size_err
+                content_range = headers.get("Content-Range")
+                try:
+                    if status_code == 206 and content_range and "/" in content_range:
+                        full_size = int(content_range.split("/", 1)[1])
+                        resumable = True
+                    else:
+                        full_size = int(headers.get("Content-Length", 0))
+                        resumable = False
+                except Exception as size_err:
+                    raise ResourceInfoError(
+                        url, "Failed to parse file size", size_err
+                    ) from size_err
 
-                    file_id = headers.get("ETag")
-                    cd = headers.get("Content-Disposition", "")
-                    file_name = url_to_file_name(url)
-                    if "filename=" in cd:
-                        file_name = cd.split("filename=")[-1].strip('"')
+                file_id = headers.get("ETag")
+                cd = headers.get("Content-Disposition", "")
+                file_name = url_to_file_name(url)
+                if "filename=" in cd:
+                    file_name = cd.split("filename=")[-1].strip('"')
 
-                    async for chunk in response.aiter_bytes():
-                        break
+                async for _chunk in response.aiter_bytes():
+                    break
 
-                    last_mod = headers.get("Last-Modified")
-                    try:
-                        date_created = (
-                            parsedate_to_datetime(last_mod)
-                            if last_mod
-                            else datetime.now(timezone.utc)
-                        )
-                    except Exception as date_err:
-                        logger.warning(f"FAILED on get_file_info for {url}: {date_err}")
-                        raise ResourceInfoError(
-                            url, "Invalid Last-Modified header", date_err
-                        ) from date_err
-
-                    return ResourceInfo(
-                        file_name=file_name,
-                        file_dir=".",
-                        file_size=full_size,
-                        file_id=file_id,
-                        download_url=str(response.url),
-                        transmission_protocol=response.url.scheme,
-                        server_accept_ranges=resumable,
-                        file_created_at=date_created,
-                        protocol_data=dict(headers),
+                last_mod = headers.get("Last-Modified")
+                try:
+                    date_created = (
+                        parsedate_to_datetime(last_mod) if last_mod else datetime.now(UTC)
                     )
+                except Exception as date_err:
+                    logger.warning(f"FAILED on get_file_info for {url}: {date_err}")
+                    raise ResourceInfoError(
+                        url, "Invalid Last-Modified header", date_err
+                    ) from date_err
+
+                return ResourceInfo(
+                    file_name=file_name,
+                    file_dir=".",
+                    file_size=full_size,
+                    file_id=file_id,
+                    download_url=str(response.url),
+                    transmission_protocol=response.url.scheme,
+                    server_accept_ranges=resumable,
+                    file_created_at=date_created,
+                    protocol_data=dict(headers),
+                )
 
         except Exception as err:
             raise map_httpx_error(err, url) from err

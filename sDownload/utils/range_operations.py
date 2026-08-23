@@ -1,5 +1,6 @@
 from collections import deque
-from sDownload.interfaces.models import ChunkRange, ChunkFragment
+
+from sDownload.interfaces.models import ChunkFragment, ChunkRange
 
 
 def calculate_ranges(
@@ -43,10 +44,7 @@ def calculate_ranges(
 
         final_ranges.append(cache_range)
 
-        if cache_range.end is None:
-            current_pos = file_size
-        else:
-            current_pos = cache_range.end + 1
+        current_pos = file_size if cache_range.end is None else cache_range.end + 1
 
     if current_pos < file_size:
         gap_start = current_pos
@@ -106,17 +104,13 @@ def calculate_optimal_coverage(
     best_chunk_at: dict[int, ChunkRange] = {}
     for chunk in chunks:
         start = chunk.start
-        if start not in best_chunk_at or get_reach(chunk) > get_reach(
-            best_chunk_at[start]
-        ):
+        if start not in best_chunk_at or get_reach(chunk) > get_reach(best_chunk_at[start]):
             best_chunk_at[start] = chunk
 
     # STEP 2: Validate that we have a chunk starting at byte 0
     start_positions = sorted(best_chunk_at.keys())
     if start_positions[0] > 0:
-        raise ValueError(
-            f"Gap at the beginning: first chunk starts at {start_positions[0]}"
-        )
+        raise ValueError(f"Gap at the beginning: first chunk starts at {start_positions[0]}")
 
     # STEP 3: Build the set of "cut points" (where we can transition to the next chunk)
     cut_points = set(start_positions)
@@ -148,9 +142,7 @@ def calculate_optimal_coverage(
             return path + [ChunkFragment(range=chunk, read_limit_qt_bytes=None)]
 
         # Find all cut points this chunk can reach
-        reachable_cuts = [
-            cp for cp in cut_points if current_pos < cp <= chunk_reach + 1
-        ]
+        reachable_cuts = [cp for cp in cut_points if current_pos < cp <= chunk_reach + 1]
 
         # Try each cut point, starting from the furthest (greedy BFS optimization)
         for next_pos in reversed(reachable_cuts):
@@ -163,11 +155,7 @@ def calculate_optimal_coverage(
 
             # Determine if we need to truncate or read the whole chunk
             uses_entire_chunk = (current_pos + bytes_needed) >= chunk_reach + 1
-            read_limit = (
-                None
-                if uses_entire_chunk or chunk_reach == float("inf")
-                else bytes_needed
-            )
+            read_limit = None if uses_entire_chunk or chunk_reach == float("inf") else bytes_needed
 
             new_fragment = ChunkFragment(range=chunk, read_limit_qt_bytes=read_limit)
             new_path = path + [new_fragment]

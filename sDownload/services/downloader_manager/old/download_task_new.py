@@ -1,23 +1,24 @@
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime
 import logging
 import time
-from typing import AsyncIterator, Dict, List, Optional, Tuple
-from sDownload.interfaces.protocols import (
-    DownloaderProtocol,
-    FileStorageProtocol,
-    DownloadStrategyProtocol,
+from dataclasses import dataclass
+from datetime import datetime
+
+from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
+    throttle_and_track_async_stream,
 )
+
 from sDownload.interfaces.models import (
-    ChunkRange,
     ChunkDownloadStats,
+    ChunkRange,
     DownloadStats,
     EDownloadStatus,
     StrategyAction,
 )
-from sDownload.services.downloader_manager.throttle_and_track_async_stream import (
-    throttle_and_track_async_stream,
+from sDownload.interfaces.protocols import (
+    DownloaderProtocol,
+    DownloadStrategyProtocol,
+    FileStorageProtocol,
 )
 from sDownload.services.downloader_manager.strategies.multi_chunk_strategy import (
     MultiChunkDownloadStrategy,
@@ -27,12 +28,12 @@ from sDownload.services.downloader_manager.strategies.multi_chunk_strategy impor
 @dataclass
 class DownloadConfig:
     file_name: str
-    file_dir: Optional[str]
+    file_dir: str | None
     file_size: int
-    file_id: Optional[str]
+    file_id: str | None
     download_url: str
     file_created_at: datetime
-    protocol_data: Optional[dict]
+    protocol_data: dict | None
     max_connections_per_download: int = 1
     max_speed_bytes_per_second: int | None = None  # use None for unlimited
     use_chunked_download: bool = (True,)
@@ -55,12 +56,10 @@ class DownloadTask:
         self._max_conn = max(1, cfg.max_connections_per_download)
         self._target_speed = cfg.max_speed_bytes_per_second
         self._download_stats = DownloadStats(cfg.file_size)
-        self._chunks_stats: Dict[str, ChunkDownloadStats] = (
-            {}
-        )  # never deleted ( only when error )
-        self._chunks_tasks: Dict[str, asyncio.Task] = {}  # active tasks
+        self._chunks_stats: dict[str, ChunkDownloadStats] = {}  # never deleted ( only when error )
+        self._chunks_tasks: dict[str, asyncio.Task] = {}  # active tasks
         # self._pending: List[Tuple[int, Optional[int]]] = []
-        self._dl_controller_task: Optional[asyncio.Task] = None
+        self._dl_controller_task: asyncio.Task | None = None
         self._pause_event = asyncio.Event()
         self._downloader_strategy = (
             strategy if strategy else MultiChunkDownloadStrategy(self._max_conn)
@@ -68,7 +67,7 @@ class DownloadTask:
         self._recovery_mode = False
         self._pause_event.set()
 
-    def _key(self, start_byte: int, end_byte: Optional[int]) -> str:
+    def _key(self, start_byte: int, end_byte: int | None) -> str:
         return f"{start_byte}_{end_byte or 'EOF'}"
 
     async def _periodic_stats(
@@ -86,7 +85,7 @@ class DownloadTask:
             await asyncio.sleep(interval)
         stats.update()
 
-    async def _download_chunk(self, start: int, end: Optional[int]) -> str | None:
+    async def _download_chunk(self, start: int, end: int | None) -> str | None:
         key = self._key(start, end)
         name = f"{key}_{self._cfg.file_name}.sdownload"
         end_byte = end if end is not None else self._cfg.file_size - 1
@@ -95,8 +94,7 @@ class DownloadTask:
             chunk_file_name=name,
             range=ChunkRange(start, end_byte),
             file_size=file_size,
-            target_speed_bps=self._target_speed
-            * 0.1,  # mudar para 1 está 0.1 para testes
+            target_speed_bps=self._target_speed * 0.1,  # mudar para 1 está 0.1 para testes
         )
         self._chunks_stats[key] = stats
 
@@ -106,9 +104,7 @@ class DownloadTask:
         stats_task = asyncio.create_task(self._periodic_stats(stats, stop))
         try:
             self._logger.info("byte range [%s]-[%s]", start, end or "EOF")
-            raw_it = self._downloader.download_chunk(
-                self._cfg.download_url, start, end_byte
-            )
+            raw_it = self._downloader.download_chunk(self._cfg.download_url, start, end_byte)
             tracked = throttle_and_track_async_stream(raw_it, stats)
             await self._storage.save_binary_data(name, tracked)
             stats.set_status(EDownloadStatus.COMPLETED)
@@ -158,10 +154,7 @@ class DownloadTask:
         await self._pause_event.wait()
         self._update_stats()
 
-        while (
-            self._download_stats.bytes_downloaded < self._cfg.file_size
-            or self._chunks_tasks
-        ):
+        while self._download_stats.bytes_downloaded < self._cfg.file_size or self._chunks_tasks:
             await self._pause_event.wait()
             self._logger.info("_dl_controller loop")
 
@@ -177,9 +170,7 @@ class DownloadTask:
                         key = task.result()
                         del self._chunks_tasks[key]
                     except Exception as e:
-                        self._logger.warning(
-                            "Download task failed: %s", e, exc_info=True
-                        )
+                        self._logger.warning("Download task failed: %s", e, exc_info=True)
 
             self._update_stats()
 
@@ -189,10 +180,8 @@ class DownloadTask:
             for action in operation_actions:
                 match action:
                     case StrategyAction.Start(range, speed):
-                        self._chunks_tasks[self._key(range.start, range.end)] = (
-                            asyncio.create_task(
-                                self._download_chunk(range.start, range.end)
-                            )
+                        self._chunks_tasks[self._key(range.start, range.end)] = asyncio.create_task(
+                            self._download_chunk(range.start, range.end)
                         )
                     case StrategyAction.Cancel(range):
                         key = self._key(range.start, range.end)
@@ -224,13 +213,9 @@ class DownloadTask:
         self._logger.info("_delete_all_temp_files")
         files_to_delete = [s.chunk_file_name for s in self._chunks_stats.values()]
         files_names_in_storage = [s.key for s in await self._storage.list_data()]
-        files_to_delete_in_storage = [
-            s for s in files_to_delete if s in files_names_in_storage
-        ]
+        files_to_delete_in_storage = [s for s in files_to_delete if s in files_names_in_storage]
         self._logger.info(files_to_delete_in_storage)
-        delete_tasks = [
-            self._storage.delete_data(s) for s in files_to_delete_in_storage
-        ]
+        delete_tasks = [self._storage.delete_data(s) for s in files_to_delete_in_storage]
         self._logger.info(files_to_delete)
         await asyncio.gather(*delete_tasks)
 
@@ -260,10 +245,8 @@ class DownloadTask:
         for action in operation_actions:
             match action:
                 case StrategyAction.Start(range, speed):
-                    self._chunks_tasks[self._key(range.start, range.end)] = (
-                        asyncio.create_task(
-                            self._download_chunk(range.start, range.end)
-                        )
+                    self._chunks_tasks[self._key(range.start, range.end)] = asyncio.create_task(
+                        self._download_chunk(range.start, range.end)
                     )
 
     def start(self):

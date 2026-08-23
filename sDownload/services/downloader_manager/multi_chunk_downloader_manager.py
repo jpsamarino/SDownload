@@ -1,20 +1,17 @@
 import logging
-import asyncio
-from typing import Dict, List, Optional
 from urllib.parse import urlparse
+
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
+from sDownload.interfaces.models import DLManagerConfig
 from sDownload.interfaces.protocols import (
     DownloaderManagerProtocol,
     DownloaderProtocol,
     FileStorageProtocol,
 )
-from sDownload.interfaces.models import DLManagerConfig
-from sDownload.services.downloader_manager.download_task import DownloadTask
 
 
 class MultiChunkDownloader(DownloaderManagerProtocol):
-
     def __init__(
         self,
         config: DLManagerConfig = None,
@@ -33,9 +30,7 @@ class MultiChunkDownloader(DownloaderManagerProtocol):
         self.file_storage_executor = file_storage_executor or LocalStorage(
             storage_dir=self.config.destination_folder
         )
-        self.file_storage_handler = LocalStorage(
-            storage_dir=self.config.destination_handler
-        )
+        self.file_storage_handler = LocalStorage(storage_dir=self.config.destination_handler)
         self._logger = config.logger or logging.getLogger(__name__)
 
         def _get_executor(url: str) -> DownloaderProtocol:

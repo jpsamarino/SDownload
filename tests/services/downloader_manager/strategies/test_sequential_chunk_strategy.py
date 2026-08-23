@@ -1,5 +1,4 @@
 from sDownload.interfaces.models import (
-    ChunkRange,
     DownloadStats,
     StrategyAction,
 )

@@ -1,4 +1,5 @@
 from sDownload.interfaces.protocols import ThrottlerProtocol
+
 from .fixed_window import FixedWindowThrottler
 from .token_bucket import TokenBucketThrottler
 

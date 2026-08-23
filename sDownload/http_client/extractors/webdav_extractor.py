@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
-from .protocol import ResourceExtractorProtocol, ExtractedLink, DiscoveryMethod
+
+from .protocol import DiscoveryMethod, ExtractedLink, ResourceExtractorProtocol
 
 
 class WebDavExtractor(ResourceExtractorProtocol):

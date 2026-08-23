@@ -1,7 +1,9 @@
-import pytest
 from types import SimpleNamespace
-from sDownload.services.downloader_manager.chunk_utils.cleanup import cleanup_temp_files
+
+import pytest
+
 from sDownload.file_system.local_storage import LocalStorage
+from sDownload.services.downloader_manager.chunk_utils.cleanup import cleanup_temp_files
 
 
 async def iter_helper(data):

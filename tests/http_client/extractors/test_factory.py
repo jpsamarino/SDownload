@@ -1,9 +1,5 @@
-from sDownload.http_client.extractors.protocol import DiscoveryMethod
-import pytest
 from sDownload.http_client.extractors.factory import ExtractorFactory
-from sDownload.http_client.extractors.webdav_extractor import WebDavExtractor
-from sDownload.http_client.extractors.json_extractor import JsonExtractor
-from sDownload.http_client.extractors.text_pattern_extractor import TextPatternExtractor
+from sDownload.http_client.extractors.protocol import DiscoveryMethod
 
 
 def test_factory_returns_correct_parsers_by_content_type():
@@ -30,9 +26,7 @@ def test_factory_returns_correct_parsers_by_content_type():
     )
 
     # Binaries should return None
-    assert (
-        ExtractorFactory.get_extractor("application/zip", DiscoveryMethod.GET) is None
-    )
+    assert ExtractorFactory.get_extractor("application/zip", DiscoveryMethod.GET) is None
     assert ExtractorFactory.get_extractor("image/png", DiscoveryMethod.GET) is None
 
 

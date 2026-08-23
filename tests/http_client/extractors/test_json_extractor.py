@@ -1,4 +1,3 @@
-import pytest
 from sDownload.http_client.extractors.json_extractor import JsonExtractor
 
 
@@ -14,11 +13,11 @@ def test_json_extractor_finds_urls():
         }
     }
     """
-    
+
     links = extractor.extract(json_content, "http://any.com")
-    urls = [l.url for l in links]
-    
+    urls = [link.url for link in links]
+
     assert "http://example.com/files/1.zip" in urls
     assert "https://other.com/ext.mp4" in urls
     assert len(urls) == 2
-    assert all(l.is_dir is None for l in links)
+    assert all(link.is_dir is None for link in links)

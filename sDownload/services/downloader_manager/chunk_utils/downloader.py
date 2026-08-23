@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
+
+from sDownload.exceptions import IntegrityError
+from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
 from sDownload.interfaces.protocols import (
     DownloaderProtocol,
     FileStorageProtocol,
     ThrottlerProtocol,
 )
-from sDownload.exceptions import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,7 @@ async def download_chunk_supervised(
             stats.range.end or "EOF",
         )
 
-        raw_it = downloader.download_chunk(
-            download_url, stats.range.start, stats.range.end
-        )
+        raw_it = downloader.download_chunk(download_url, stats.range.start, stats.range.end)
 
         tracked = throttler.wrap(raw_it, stats)
 
@@ -55,9 +54,7 @@ async def download_chunk_supervised(
         if stats.limit_qt_bytes and stats.bytes_downloaded >= stats.limit_qt_bytes:
             if stats.status != EDownloadStatus.DEPRECATED:
                 stats.set_status(EDownloadStatus.DEPRECATED)
-            logger.info(
-                "[%s] goal reached, marked as DEPRECATED.", stats.chunk_file_name
-            )
+            logger.info("[%s] goal reached, marked as DEPRECATED.", stats.chunk_file_name)
         else:
             stats.set_status(EDownloadStatus.CANCELLED)
             logger.warning("[%s] download cancelled", stats.chunk_file_name)

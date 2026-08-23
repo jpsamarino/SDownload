@@ -1,6 +1,6 @@
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 
 def json_serializer(obj: Any) -> Any:
@@ -11,7 +11,7 @@ def json_serializer(obj: Any) -> Any:
     if isinstance(obj, datetime):
         # Ensure we have a timezone-aware object for consistency, default to UTC
         if obj.tzinfo is None:
-            obj = obj.replace(tzinfo=timezone.utc)
+            obj = obj.replace(tzinfo=UTC)
         # Convert to ISO format and replace +00:00 with Z
         return obj.isoformat().replace("+00:00", "Z")
     raise TypeError(f"Type {type(obj)} not serializable")

@@ -1,10 +1,12 @@
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
+
 from sDownload.utils import json_dumps, parse_json_date
 
 
 def test_json_dumps_date():
-    dt = datetime(2026, 2, 21, 10, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 21, 10, 0, 0, tzinfo=UTC)
     data = {"date": dt}
     json_str = json_dumps(data)
     assert '"date": "2026-02-21T10:00:00Z"' in json_str
@@ -27,13 +29,13 @@ def test_parse_json_date():
     assert dt.hour == 10
     assert dt.minute == 0
     assert dt.second == 0
-    assert dt.tzinfo == timezone.utc
+    assert dt.tzinfo == UTC
 
 
 def test_parse_json_date_iso_with_tz():
     date_str = "2026-02-21T10:00:00+00:00"
     dt = parse_json_date(date_str)
-    assert dt.tzinfo == timezone.utc
+    assert dt.tzinfo == UTC
 
 
 def test_json_dumps_unsupported_type():

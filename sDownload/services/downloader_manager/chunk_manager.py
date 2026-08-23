@@ -4,11 +4,11 @@ from collections.abc import AsyncIterable, Mapping
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 
+from sDownload.exceptions import LifecycleError, ReconstructionError
 from sDownload.interfaces.models import (
-    ChunkRange,
     ChunkDownloadStats,
+    ChunkRange,
     EDownloadStatus,
-    DownloadConfig,
 )
 from sDownload.interfaces.models.params.chunk_manager_params import ChunkManagerParams
 from sDownload.interfaces.protocols import (
@@ -16,18 +16,17 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
     ThrottlerProtocol,
 )
-from sDownload.exceptions import ReconstructionError, LifecycleError
-from sDownload.services.downloader_manager.throttling import get_default_throttler
 from sDownload.services.downloader_manager.chunk_utils import (
-    monitor_download_progress,
-    run_chunk_succession,
     cleanup_temp_files,
+    create_succession_stop_callback,
     download_chunk_supervised,
-    reconstruct_file,
     format_chunk_file_name,
     get_effective_range_info,
-    create_succession_stop_callback,
+    monitor_download_progress,
+    reconstruct_file,
+    run_chunk_succession,
 )
+from sDownload.services.downloader_manager.throttling import get_default_throttler
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +160,7 @@ class ChunkManager:
             self._check_stop_monitor()
             return completed
 
-    def start_chunk(
-        self, chunk_range: ChunkRange, target_speed_bps: int | None = None
-    ) -> None:
+    def start_chunk(self, chunk_range: ChunkRange, target_speed_bps: int | None = None) -> None:
         stats = self._chunks_stats.get(chunk_range)
         if stats and stats.status == EDownloadStatus.COMPLETED:
             logger.info("Chunk %s already completed", chunk_range)
@@ -186,18 +183,14 @@ class ChunkManager:
             )
             if self._monitor_task is None or self._monitor_task.done():
                 self._monitor_task = asyncio.create_task(
-                    monitor_download_progress(
-                        self._chunks_stats, self._params.file_name
-                    )
+                    monitor_download_progress(self._chunks_stats, self._params.file_name)
                 )
         else:
             logger.info("Already have a task for chunk %s", chunk_range)
 
     def resize_chunk(self, current_range: ChunkRange, new_range: ChunkRange) -> None:
         if new_range not in current_range:
-            raise ValueError(
-                f"New range {new_range} must be contained within {current_range}"
-            )
+            raise ValueError(f"New range {new_range} must be contained within {current_range}")
 
         if current_range not in self._chunks_stats:
             if current_range not in self._chunks_tasks:
@@ -225,11 +218,7 @@ class ChunkManager:
             target_speed_bps=stats_a.target_speed_bps,
         )
         stats_b.set_status(EDownloadStatus.AWAITING_SUCCESSION)
-        limit = (
-            new_range.end - current_range.start + 1
-            if new_range.end is not None
-            else None
-        )
+        limit = new_range.end - current_range.start + 1 if new_range.end is not None else None
 
         if limit and stats_a.status in (
             EDownloadStatus.PENDING,
@@ -293,9 +282,7 @@ class ChunkManager:
 
     async def delete_chunk_data(self, chunk_range: ChunkRange) -> None:
         if chunk_range in self._chunks_tasks:
-            logger.info(
-                "Cancelling active task for chunk %s before removal.", chunk_range
-            )
+            logger.info("Cancelling active task for chunk %s before removal.", chunk_range)
             await self.cancel_chunk(chunk_range)
 
         stats = self._chunks_stats.pop(chunk_range, None)
@@ -318,9 +305,7 @@ class ChunkManager:
         else:
             logger.warning("No stats found for chunk %s to remove.", chunk_range)
 
-    def set_speed_limit(
-        self, speed_bps: float, chunk_range: ChunkRange | None = None
-    ) -> None:
+    def set_speed_limit(self, speed_bps: float, chunk_range: ChunkRange | None = None) -> None:
         if chunk_range:
             stats = self._chunks_stats.get(chunk_range)
             if stats:
@@ -355,13 +340,9 @@ class ChunkManager:
 
         if delete_files:
             await cleanup_temp_files(self._storage, self._chunks_stats.values())
-            logger.info(
-                "Cleanup complete: all tasks stopped, files deleted, and state cleared."
-            )
+            logger.info("Cleanup complete: all tasks stopped, files deleted, and state cleared.")
         else:
-            logger.info(
-                "Cleanup complete: all tasks stopped, files PRESERVED, state cleared."
-            )
+            logger.info("Cleanup complete: all tasks stopped, files PRESERVED, state cleared.")
 
         self._chunks_stats.clear()
 
@@ -386,16 +367,12 @@ class ChunkManager:
     async def wait_for_completed_chunks(
         self, timeout: float | None = None
     ) -> list[ChunkDownloadStats]:
-        return await self._wait_for_chunks(
-            timeout=timeout, return_when=asyncio.ALL_COMPLETED
-        )
+        return await self._wait_for_chunks(timeout=timeout, return_when=asyncio.ALL_COMPLETED)
 
     async def wait_for_first_completed_chunk(
         self, timeout: float | None = None
     ) -> list[ChunkDownloadStats]:
-        return await self._wait_for_chunks(
-            timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-        )
+        return await self._wait_for_chunks(timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
 
     async def as_stream(self) -> AsyncIterable[ChunkDownloadStats]:
         while self._chunks_tasks:

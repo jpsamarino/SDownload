@@ -1,8 +1,8 @@
 import pytest
-from sDownload.exceptions import DownloadRequestError
+
+from sDownload.exceptions import DownloadRequestError, SDownloadError
 from sDownload.http_client.httpx_downloader import HttpxDownloader
 from sDownload.interfaces.models import HttpConfigModel
-
 
 # @pytest.mark.asyncio
 # async def test_httpx_downloader():
@@ -21,9 +21,7 @@ from sDownload.interfaces.models import HttpConfigModel
 async def test_httpx_get_file_info_common_case(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(
-        f"{nginx_custom['http']}/default/file_100k.bin"
-    )
+    result = await downloader.get_file_info(f"{nginx_custom['http']}/default/file_100k.bin")
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
@@ -33,9 +31,7 @@ async def test_httpx_get_file_info_common_case(nginx_custom):
 async def test_httpx_get_file_info_without_range_support(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(
-        f"{nginx_custom['http']}/no_resume/file_10M.bin"
-    )
+    result = await downloader.get_file_info(f"{nginx_custom['http']}/no_resume/file_10M.bin")
     assert result.file_name == "file_10M.bin"
     assert result.file_size == 10485760
     assert result.server_accept_ranges is False
@@ -45,7 +41,7 @@ async def test_httpx_get_file_info_without_range_support(nginx_custom):
 async def test_httpx_get_file_info_with_wrong_url(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0)
     downloader = HttpxDownloader(config)
-    with pytest.raises(Exception):
+    with pytest.raises(SDownloadError):
         await downloader.get_file_info(f"{nginx_custom['http']}/its_not_there")
 
 
@@ -71,19 +67,15 @@ async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
 async def test_httpx_get_file_info_https_without_valid_ssl(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=False)
     downloader = HttpxDownloader(config)
-    result = await downloader.get_file_info(
-        f"{nginx_custom['https']}/default/file_100k.bin"
-    )
+    result = await downloader.get_file_info(f"{nginx_custom['https']}/default/file_100k.bin")
     assert result.file_name == "file_100k.bin"
     assert result.file_size == 102400
     assert result.server_accept_ranges is True
-    with pytest.raises(Exception):
+    with pytest.raises(SDownloadError):
         # should raise because https has a self-signed certificate
         config_ssl = HttpConfigModel(timeout_connect_s=20.0, valid_ssl=True)
         downloader_ssl = HttpxDownloader(config_ssl)
-        await downloader_ssl.get_file_info(
-            f"{nginx_custom['https']}/default/file_100k.bin"
-        )
+        await downloader_ssl.get_file_info(f"{nginx_custom['https']}/default/file_100k.bin")
 
 
 @pytest.mark.asyncio
@@ -103,10 +95,7 @@ async def test_download_chunk_partial(nginx_custom):
     downloader = HttpxDownloader(config)
     url = f"{nginx_custom['http']}/default/file_100k.bin"
     partial = [
-        chunk
-        async for chunk in downloader.download_chunk(
-            url, start_byte=1000, end_byte=1999
-        )
+        chunk async for chunk in downloader.download_chunk(url, start_byte=1000, end_byte=1999)
     ]
     data = b"".join(partial)
     assert len(data) == 1000
@@ -122,9 +111,7 @@ async def test_download_chunk_invalid_range(nginx_custom):
     with pytest.raises(Exception) as exc_info:
         _ = [
             chunk
-            async for chunk in downloader.download_chunk(
-                url, start_byte=200000, end_byte=300000
-            )
+            async for chunk in downloader.download_chunk(url, start_byte=200000, end_byte=300000)
         ]
     assert isinstance(exc_info.value, DownloadRequestError)
 
@@ -136,10 +123,7 @@ async def test_download_chunk_invalid_end_range(nginx_custom):
     url = f"{nginx_custom['http']}/default/file_100k.bin"
     # download only a part of the file (from byte 102390 to byte 102400)
     partial = [
-        chunk
-        async for chunk in downloader.download_chunk(
-            url, start_byte=102390, end_byte=511990
-        )
+        chunk async for chunk in downloader.download_chunk(url, start_byte=102390, end_byte=511990)
     ]
     data = b"".join(partial)
     total_size = 100 * 1024
@@ -235,13 +219,11 @@ async def test_httpx_list_resources_recursive(nginx_custom):
 
 
 @pytest.mark.asyncio
-async def test_httpx_list_resources_recursive(nginx_custom):
+async def test_httpx_list_resources_recursive_with_pattern(nginx_custom):
     config = HttpConfigModel(timeout_connect_s=5.0)
     downloader = HttpxDownloader(config)
     url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
-    resources = [
-        r async for r in downloader.list_resources(url, level=3, pattern=r".bin$")
-    ]
+    resources = [r async for r in downloader.list_resources(url, level=3, pattern=r".bin$")]
 
     assert any("file_100k.bin" in r for r in resources)
     assert any("file_1M.bin" in r for r in resources)
@@ -254,9 +236,7 @@ async def test_httpx_list_resources_with_regex(nginx_custom):
 
     url = f"{nginx_custom['http']}/scenarios_pages_html/teste1/level1/"
     # Only find files with "leaf" in name (Level 3 to reach and confirm leaf.txt)
-    resources = [
-        r async for r in downloader.list_resources(url, pattern=r"leaf", level=3)
-    ]
+    resources = [r async for r in downloader.list_resources(url, pattern=r"leaf", level=3)]
 
     assert any("leaf.txt" in r for r in resources)
     assert len(resources) == 1

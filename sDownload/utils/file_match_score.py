@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sDownload.interfaces.models import FileMatchScore
 from sDownload.interfaces.protocols import FileStorageProtocol
 
@@ -33,17 +34,14 @@ async def calculate_file_match_score(
             reason = f"Size mismatch: local={info.size_bytes}B, remote={expected_size}B"
         else:
             score = 0.50
-            now = reference_time or datetime.now(timezone.utc)
-            if now.tzinfo is None:
-                now = now.replace(tzinfo=timezone.utc)
-            else:
-                now = now.astimezone(timezone.utc)
+            now = reference_time or datetime.now(UTC)
+            now = now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
 
             created_at = info.created_at
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=UTC)
             else:
-                created_at = created_at.astimezone(timezone.utc)
+                created_at = created_at.astimezone(UTC)
 
             age_seconds = max(0.0, (now - created_at).total_seconds())
 
@@ -56,9 +54,9 @@ async def calculate_file_match_score(
 
             if remote_created_at:
                 if remote_created_at.tzinfo is None:
-                    remote_dt = remote_created_at.replace(tzinfo=timezone.utc)
+                    remote_dt = remote_created_at.replace(tzinfo=UTC)
                 else:
-                    remote_dt = remote_created_at.astimezone(timezone.utc)
+                    remote_dt = remote_created_at.astimezone(UTC)
 
                 if created_at < remote_dt:
                     score = 0.0
@@ -67,9 +65,7 @@ async def calculate_file_match_score(
                     score += 0.20
                     reason = f"Size matched ({info.size_bytes}B) and newer than remote"
             else:
-                reason = (
-                    f"Size matched ({info.size_bytes}B) with age {age_seconds:.0f}s"
-                )
+                reason = f"Size matched ({info.size_bytes}B) with age {age_seconds:.0f}s"
 
             score = min(1.0, score)
 

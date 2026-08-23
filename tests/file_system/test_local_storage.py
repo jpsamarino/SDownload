@@ -1,16 +1,18 @@
+import asyncio
+import contextlib
 from datetime import datetime
 from pathlib import Path
-import asyncio
+
 import pytest
+
+from sDownload.exceptions import (
+    StorageNotFoundError,
+)
 from sDownload.file_system.local_storage import LocalStorage
+from sDownload.interfaces.models import StoredFileInfo
 from sDownload.interfaces.protocols import (
     FileRangeParams,
     FileStorageProtocol,
-)
-from sDownload.interfaces.models import StoredFileInfo
-from sDownload.exceptions import (
-    StorageNotFoundError,
-    DownloadRequestError,
 )
 
 
@@ -58,12 +60,8 @@ async def test_list_data(storage: FileStorageProtocol, tmp_path: Path):
     content1 = b"1234"
     content2 = b"abcd"
 
-    await storage.save_binary_data(
-        "a.bin", generate_chunks(content1, default_test_chunk_size)
-    )
-    await storage.save_binary_data(
-        "b.bin", generate_chunks(content2, default_test_chunk_size)
-    )
+    await storage.save_binary_data("a.bin", generate_chunks(content1, default_test_chunk_size))
+    await storage.save_binary_data("b.bin", generate_chunks(content2, default_test_chunk_size))
 
     infos = await storage.list_data()
     assert len(infos) == 2
@@ -104,15 +102,9 @@ async def test_merge_three_parts(storage: LocalStorage):
     part1 = b"ABC"
     part2 = b"DEFG"
     part3 = b"HIJKLM"
-    await storage.save_binary_data(
-        "p1.bin", generate_chunks(part1, default_test_chunk_size)
-    )
-    await storage.save_binary_data(
-        "p2.bin", generate_chunks(part2, default_test_chunk_size)
-    )
-    await storage.save_binary_data(
-        "p3.bin", generate_chunks(part3, default_test_chunk_size)
-    )
+    await storage.save_binary_data("p1.bin", generate_chunks(part1, default_test_chunk_size))
+    await storage.save_binary_data("p2.bin", generate_chunks(part2, default_test_chunk_size))
+    await storage.save_binary_data("p3.bin", generate_chunks(part3, default_test_chunk_size))
 
     await storage.merge_binary_files(["p1.bin", "p2.bin", "p3.bin"], "merged.bin")
 
@@ -125,18 +117,12 @@ async def test_merge_three_parts(storage: LocalStorage):
 @pytest.mark.asyncio
 async def test_merge_overwrites_existing(storage: LocalStorage):
     existing = b"OLD"
-    await storage.save_binary_data(
-        "dest.bin", generate_chunks(existing, default_test_chunk_size)
-    )
+    await storage.save_binary_data("dest.bin", generate_chunks(existing, default_test_chunk_size))
 
     new1 = b"123"
     new2 = b"4567"
-    await storage.save_binary_data(
-        "n1.bin", generate_chunks(new1, default_test_chunk_size)
-    )
-    await storage.save_binary_data(
-        "n2.bin", generate_chunks(new2, default_test_chunk_size)
-    )
+    await storage.save_binary_data("n1.bin", generate_chunks(new1, default_test_chunk_size))
+    await storage.save_binary_data("n2.bin", generate_chunks(new2, default_test_chunk_size))
 
     await storage.merge_binary_files(["n1.bin", "n2.bin"], "dest.bin")
 
@@ -157,9 +143,7 @@ async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStora
 
     file_name = "testfile.bin"
     data = b"1234567890"
-    await storage.save_binary_data(
-        file_name, generate_chunks(data, default_test_chunk_size)
-    )
+    await storage.save_binary_data(file_name, generate_chunks(data, default_test_chunk_size))
     await storage.shrink_file_to(file_name, 15)
 
     merged = b""
@@ -172,9 +156,7 @@ async def test_shrink_file_to_no_truncation_if_target_larger(storage: LocalStora
 async def test_shrink_file_to_truncates_correctly(storage: LocalStorage):
     file_name = "file_to_truncate.bin"
     data = b"abcdefghij"
-    await storage.save_binary_data(
-        file_name, generate_chunks(data, default_test_chunk_size)
-    )
+    await storage.save_binary_data(file_name, generate_chunks(data, default_test_chunk_size))
     await storage.shrink_file_to(file_name, 6)
 
     merged = b""
@@ -189,9 +171,7 @@ async def test_move_data_renames_file(storage: LocalStorage, tmp_path: Path):
     dest_key = "dest.bin"
     data = b"content to move"
 
-    await storage.save_binary_data(
-        source_key, generate_chunks(data, default_test_chunk_size)
-    )
+    await storage.save_binary_data(source_key, generate_chunks(data, default_test_chunk_size))
 
     assert (tmp_path / source_key).exists()
     assert not (tmp_path / dest_key).exists()
@@ -219,9 +199,7 @@ async def test_move_data_overwrites_existing(storage: LocalStorage, tmp_path: Pa
     await storage.save_binary_data(
         source_key, generate_chunks(data_source, default_test_chunk_size)
     )
-    await storage.save_binary_data(
-        dest_key, generate_chunks(data_dest, default_test_chunk_size)
-    )
+    await storage.save_binary_data(dest_key, generate_chunks(data_dest, default_test_chunk_size))
 
     await storage.move_data(source_key, dest_key)
 
@@ -291,9 +269,7 @@ async def test_crop_file_only_tail(storage: LocalStorage):
 @pytest.mark.asyncio
 async def test_crop_file_validation_negative_values(storage: LocalStorage):
     key = "neg_test.bin"
-    await storage.save_binary_data(
-        key, generate_chunks(b"0123456789", default_test_chunk_size)
-    )
+    await storage.save_binary_data(key, generate_chunks(b"0123456789", default_test_chunk_size))
 
     with pytest.raises(
         ValueError,
@@ -351,10 +327,8 @@ async def test_save_binary_data_cancellation_safety(storage: LocalStorage):
     # Cancel the task while it's sleeping in slow_generator
     task.cancel()
 
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     # Now verify we can immediately CROP or MOVE the file without block file lock
     # If the finally/close didn't work, this would raise PermissionError on Windows
@@ -368,9 +342,7 @@ async def test_save_binary_data_cancellation_safety(storage: LocalStorage):
 
 
 @pytest.mark.asyncio
-async def test_save_binary_data_cancellation_keeps_written_data(
-    storage, tmp_path: Path
-):
+async def test_save_binary_data_cancellation_keeps_written_data(storage, tmp_path: Path):
     key = "huge_cancel_test.bin"
 
     TOTAL_BYTES = 200 * 1024 * 1024  # 200 MB
@@ -394,10 +366,8 @@ async def test_save_binary_data_cancellation_keeps_written_data(
     await cancel_event.wait()
     save_task.cancel()
 
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await save_task
-    except asyncio.CancelledError:
-        pass
     await asyncio.sleep(0.1)
 
     path = tmp_path / key

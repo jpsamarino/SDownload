@@ -4,9 +4,7 @@ from .base import SDownloadError
 class CommunicationError(SDownloadError):
     """Base class for all communication and protocol-related errors."""
 
-    def __init__(
-        self, message: str, url: str | None = None, original: Exception | None = None
-    ):
+    def __init__(self, message: str, url: str | None = None, original: Exception | None = None):
         super().__init__(message, original=original)
         self.url = url
 

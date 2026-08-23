@@ -40,11 +40,7 @@ class StorageNotFoundError(StorageError):
     """Raised when a file or directory is not found in the storage."""
 
     def __init__(self, path: str | None = None, original: Exception | None = None):
-        msg = (
-            f"Storage resource not found: {path}"
-            if path
-            else "Storage resource not found"
-        )
+        msg = f"Storage resource not found: {path}" if path else "Storage resource not found"
         super().__init__(msg, original=original)
         self.path = path
 
@@ -54,10 +50,7 @@ class FileAlreadyExistsError(StorageError):
 
     def __init__(self, path: str | None = None, original: Exception | None = None):
         msg = (
-            f"File already exists in storage: {path}"
-            if path
-            else "File already exists in storage"
+            f"File already exists in storage: {path}" if path else "File already exists in storage"
         )
         super().__init__(msg, original=original)
         self.path = path
-

@@ -1,11 +1,13 @@
 import logging
+
 import pytest
-from sDownload.interfaces.models import EDownloadStatus, ChunkRange
-from sDownload.interfaces.models.params import DownloadTaskParams
-from sDownload.services.downloader_manager.download_task import DownloadTask
+
+from sDownload.exceptions import StorageNotFoundError
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.http_client.httpx_downloader import HttpxDownloader
-from sDownload.exceptions import StorageNotFoundError
+from sDownload.interfaces.models import EDownloadStatus
+from sDownload.interfaces.models.params import DownloadTaskParams
+from sDownload.services.downloader_manager.download_task import DownloadTask
 
 # Configuração de log para ajudar na depuração dos testes
 logging.basicConfig(level=logging.DEBUG)
@@ -91,4 +93,3 @@ async def test_download_task_resolve_file_info_no_range_nginx(tmp_path, nginx_cu
     assert task.file_name == "file_10M.bin"
     assert task._use_chunked is False
     assert task._max_conn == 1
-

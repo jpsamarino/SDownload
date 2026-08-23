@@ -1,6 +1,7 @@
-from collections.abc import AsyncGenerator
-import time
 import asyncio
+import time
+from collections.abc import AsyncGenerator
+
 from sDownload.interfaces.models import ChunkDownloadStats
 from sDownload.telemetry.logger import get_logger
 

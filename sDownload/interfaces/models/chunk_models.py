@@ -1,4 +1,4 @@
-from typing import NamedTuple, TypeAlias
+from typing import NamedTuple
 
 
 class ChunkRange(NamedTuple):
@@ -42,9 +42,7 @@ class ChunkRange(NamedTuple):
         if isinstance(item, int):
             if item < self.start:
                 return False
-            if self.end is not None and item > self.end:
-                return False
-            return True
+            return not (self.end is not None and item > self.end)
         if isinstance(item, ChunkRange):
             if item.start < self.start:
                 return False
@@ -55,10 +53,7 @@ class ChunkRange(NamedTuple):
                 if item.end > self.end:
                     return False
 
-            if item.end is not None and item.end < item.start:
-                return False
-
-            return True
+            return not (item.end is not None and item.end < item.start)
 
         return False
 
@@ -93,9 +88,7 @@ class StrategyAction:
     SetSpeed = SetSpeedAction
 
 
-AnyStrategyAction: TypeAlias = (
-    StartChunkAction | CancelChunkAction | ResizeChunkAction | SetSpeedAction
-)
+type AnyStrategyAction = StartChunkAction | CancelChunkAction | ResizeChunkAction | SetSpeedAction
 
 
 class ChunkFragment(NamedTuple):

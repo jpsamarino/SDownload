@@ -1,12 +1,14 @@
 import logging
+
 import pytest
-from sDownload.services.downloader_manager.chunk_utils import reconstruct_file
+
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
-    EDownloadStatus,
     ChunkRange,
+    EDownloadStatus,
 )
+from sDownload.services.downloader_manager.chunk_utils import reconstruct_file
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("test_reconstructor_integration")

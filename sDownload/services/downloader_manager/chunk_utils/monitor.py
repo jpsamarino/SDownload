@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from sDownload.interfaces.models import ChunkRange, ChunkDownloadStats, EDownloadStatus
+
+from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,7 @@ async def monitor_download_progress(
                             stats.speed_bps / (1024 * 1024),
                         )
             elif not is_active:
-                logger.debug(
-                    "(%s) No active or pending chunks. Stopping monitor.", file_name
-                )
+                logger.debug("(%s) No active or pending chunks. Stopping monitor.", file_name)
 
             if is_active:
                 await asyncio.sleep(interval)

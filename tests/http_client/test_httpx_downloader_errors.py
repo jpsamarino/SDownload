@@ -1,22 +1,23 @@
 import asyncio
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
+
 import httpx
 import pytest
-from unittest.mock import MagicMock, AsyncMock
-from contextlib import asynccontextmanager
+
+from sDownload.exceptions import (
+    AccessDeniedError,
+    CommunicationError,
+    DownloadRequestError,
+    DownloadTimeoutError,
+    NetworkError,
+    ProtocolError,
+    ResourceNotFoundError,
+    ServerUnavailableError,
+)
 from sDownload.http_client.httpx_downloader import HttpxDownloader
 from sDownload.http_client.httpx_error_mapper import map_httpx_error
 from sDownload.interfaces.models import HttpConfigModel
-from sDownload.exceptions import (
-    DownloadTimeoutError,
-    ResourceNotFoundError,
-    AccessDeniedError,
-    ServerUnavailableError,
-    NetworkError,
-    ProtocolError,
-    DownloadRequestError,
-    CommunicationError,
-    SDownloadError,
-)
 
 
 @pytest.fixture
@@ -62,16 +63,12 @@ def test_map_httpx_error_status_codes():
 
     # 401, 403
     for code in [401, 403]:
-        err = httpx.HTTPStatusError(
-            str(code), request=None, response=mock_response(code)
-        )
+        err = httpx.HTTPStatusError(str(code), request=None, response=mock_response(code))
         assert isinstance(map_httpx_error(err, url), AccessDeniedError)
 
     # 429, 503, 504
     for code in [429, 503, 504]:
-        err = httpx.HTTPStatusError(
-            str(code), request=None, response=mock_response(code)
-        )
+        err = httpx.HTTPStatusError(str(code), request=None, response=mock_response(code))
         assert isinstance(map_httpx_error(err, url), ServerUnavailableError)
 
     # Other status error

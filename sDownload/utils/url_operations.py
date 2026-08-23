@@ -1,6 +1,6 @@
-import re
-from urllib.parse import urlparse, urljoin, urlunparse
 import html
+import re
+from urllib.parse import urljoin, urlparse, urlunparse
 
 
 def url_to_file_name(url: str, max_length: int = 100) -> str:

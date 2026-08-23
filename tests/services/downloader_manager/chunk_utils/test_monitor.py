@@ -1,14 +1,16 @@
 import asyncio
-import logging
+import contextlib
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
-from sDownload.services.downloader_manager.chunk_utils.monitor import (
-    monitor_download_progress,
-)
+
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
-    EDownloadStatus,
     ChunkRange,
+    EDownloadStatus,
+)
+from sDownload.services.downloader_manager.chunk_utils.monitor import (
+    monitor_download_progress,
 )
 
 
@@ -41,9 +43,7 @@ async def test_monitor_basic_loop(stats_factory):
     s1 = stats_factory(0, 100)
     chunks_stats = {s1.range: s1}
 
-    with patch(
-        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
-    ) as mock_logger:
+    with patch("sDownload.services.downloader_manager.chunk_utils.monitor.logger") as mock_logger:
         monitor_task = asyncio.create_task(
             monitor_download_progress(chunks_stats, "test_file.bin", interval=0.01)
         )
@@ -51,10 +51,8 @@ async def test_monitor_basic_loop(stats_factory):
         await asyncio.sleep(0.05)
         monitor_task.cancel()
 
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await monitor_task
-        except asyncio.CancelledError:
-            pass
 
         assert mock_logger.info.called
         # Verify it logged speed
@@ -75,9 +73,7 @@ async def test_monitor_multiple_chunks(stats_factory):
 
     chunks_stats = {s1.range: s1, s2.range: s2}
 
-    with patch(
-        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
-    ) as mock_logger:
+    with patch("sDownload.services.downloader_manager.chunk_utils.monitor.logger") as mock_logger:
         monitor_task = asyncio.create_task(
             monitor_download_progress(chunks_stats, "test_file.bin", interval=0.01)
         )
@@ -100,9 +96,7 @@ async def test_monitor_no_active_chunks(stats_factory):
     s1 = stats_factory(0, 100, status=EDownloadStatus.COMPLETED)
     chunks_stats = {s1.range: s1}
 
-    with patch(
-        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
-    ) as mock_logger:
+    with patch("sDownload.services.downloader_manager.chunk_utils.monitor.logger") as mock_logger:
         monitor_task = asyncio.create_task(
             monitor_download_progress(chunks_stats, "test_file.bin", interval=0.01)
         )
@@ -121,9 +115,7 @@ async def test_monitor_debug_logs(stats_factory):
     s1 = stats_factory(0, 100)
     chunks_stats = {s1.range: s1}
 
-    with patch(
-        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
-    ) as mock_logger:
+    with patch("sDownload.services.downloader_manager.chunk_utils.monitor.logger") as mock_logger:
         mock_logger.isEnabledFor.return_value = True  # Simulate DEBUG level
 
         monitor_task = asyncio.create_task(
@@ -137,9 +129,7 @@ async def test_monitor_debug_logs(stats_factory):
         assert mock_logger.debug.called
         # Check if it logged the chunk detail in any of the debug calls
         debug_calls = [call.args for call in mock_logger.debug.call_args_list]
-        chunk_detail_logged = any(
-            len(args) > 1 and args[1] == 0 for args in debug_calls
-        )
+        chunk_detail_logged = any(len(args) > 1 and args[1] == 0 for args in debug_calls)
         assert chunk_detail_logged
 
 
@@ -186,9 +176,7 @@ async def test_monitor_stays_alive_on_pending_only(stats_factory):
     s1 = stats_factory(0, 100, status=EDownloadStatus.PENDING)
     chunks_stats = {s1.range: s1}
 
-    with patch(
-        "sDownload.services.downloader_manager.chunk_utils.monitor.logger"
-    ) as mock_logger:
+    with patch("sDownload.services.downloader_manager.chunk_utils.monitor.logger") as mock_logger:
         monitor_task = asyncio.create_task(
             monitor_download_progress(chunks_stats, "pending_test", interval=0.01)
         )

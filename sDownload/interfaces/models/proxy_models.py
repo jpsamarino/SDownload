@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 
-class EProxyType(str, Enum):
+class EProxyType(StrEnum):
     HTTP = "http"
     HTTPS = "https"
     SOCKS4 = "socks4"
@@ -15,8 +14,8 @@ class SingleProxyConfigModel:
     protocol: EProxyType
     host: str
     port: int
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
 
 @dataclass

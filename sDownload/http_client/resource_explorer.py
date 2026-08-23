@@ -1,10 +1,12 @@
-from dataclasses import dataclass, field
-from typing import List, Tuple
-import httpx
 import logging
-from sDownload.utils import is_navigable, get_url_extension
+from dataclasses import dataclass, field
+
+import httpx
+
+from sDownload.utils import get_url_extension, is_navigable
+
 from .extractors.factory import ExtractorFactory
-from .extractors.protocol import ExtractedLink, DiscoveryMethod
+from .extractors.protocol import DiscoveryMethod, ExtractedLink
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,9 @@ class DiscoveryResult:
     - unresolved_links: ExtractedLink objects that need probing.
     """
 
-    files: List[str] = field(default_factory=list)
-    directories: List[ExtractedLink] = field(default_factory=list)
-    unresolved_links: List[ExtractedLink] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)
+    directories: list[ExtractedLink] = field(default_factory=list)
+    unresolved_links: list[ExtractedLink] = field(default_factory=list)
 
 
 @dataclass
@@ -53,9 +55,7 @@ def _build_headers(method: DiscoveryMethod) -> dict:
     return {}
 
 
-def _classify_process_only_files_response(
-    url: str, resp: httpx.Response
-) -> DiscoveryResult:
+def _classify_process_only_files_response(url: str, resp: httpx.Response) -> DiscoveryResult:
     """Fast path: check if URL is a file based on extension and Content-Type."""
     ext = get_url_extension(url)
     if is_navigable(ext, resp.headers.get("Content-Type", "")) is False:
@@ -69,13 +69,11 @@ async def _stream_body(
     url: str,
     headers: dict,
     max_scrape_size: int,
-) -> Tuple[str, int]:
+) -> tuple[str, int]:
     """Stream response body until max_scrape_size, return (body, total_bytes)."""
     chunks = []
     current_total = 0
-    async with client.stream(
-        method_str, url, headers=headers, follow_redirects=True
-    ) as resp:
+    async with client.stream(method_str, url, headers=headers, follow_redirects=True) as resp:
         async for chunk in resp.aiter_text():
             chunks.append(chunk)
             current_total += len(chunk)
@@ -87,9 +85,7 @@ async def _stream_body(
 def _classify_and_extract(body: str, resp: httpx.Response) -> DiscoveryResult:
     """Extract links from body and classify them."""
     content_type = resp.headers.get("Content-Type", "").lower()
-    parser = ExtractorFactory.get_extractor(
-        content_type, DiscoveryMethod(resp.request.method)
-    )
+    parser = ExtractorFactory.get_extractor(content_type, DiscoveryMethod(resp.request.method))
     is_attachment = "attachment" in resp.headers.get("Content-Disposition", "").lower()
 
     if not parser or is_attachment:
@@ -169,10 +165,7 @@ async def _explore_with_method(
     headers = _build_headers(method)
 
     try:
-        async with client.stream(
-            method_str, url, headers=headers, follow_redirects=True
-        ) as resp:
-
+        async with client.stream(method_str, url, headers=headers, follow_redirects=True) as resp:
             if process_only_files:
                 return _classify_process_only_files_response(url, resp)
 
@@ -181,19 +174,20 @@ async def _explore_with_method(
             )
 
             # Check for DAV upgrade during streaming (only on first GET pass)
-            if method == DiscoveryMethod.GET and not is_retry:
-                if (
-                    'xmlns:d="DAV:"' in body
-                    or "<d:multistatus" in body
-                    or resp.status_code == 207
-                ):
-                    return await _explore_with_method(
-                        url,
-                        client,
-                        DiscoveryMethod.PROPFIND,
-                        max_scrape_size,
-                        is_retry=True,
-                    )
+            if (
+                method == DiscoveryMethod.GET
+                and not is_retry
+                and (
+                    'xmlns:d="DAV:"' in body or "<d:multistatus" in body or resp.status_code == 207
+                )
+            ):
+                return await _explore_with_method(
+                    url,
+                    client,
+                    DiscoveryMethod.PROPFIND,
+                    max_scrape_size,
+                    is_retry=True,
+                )
 
             # PROPFIND fallback to GET
             if (

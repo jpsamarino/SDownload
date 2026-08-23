@@ -1,4 +1,3 @@
-import pytest
 from sDownload.http_client.extractors.text_pattern_extractor import TextPatternExtractor
 
 
@@ -16,7 +15,7 @@ def test_text_pattern_extractor_finds_links():
     base_url = "http://example.com/sub/"
 
     links = extractor.extract(html, base_url)
-    urls = [l.url for l in links]
+    urls = [link.url for link in links]
 
     assert "http://example.com/sub/page1.html" in urls
     assert "http://example.com/images/logo.png" in urls
@@ -28,7 +27,7 @@ def test_text_pattern_extractor_finds_absolute_urls_in_text():
     text = "Find this: 'https://other.com/ext.mp4' and maybe 'http://localhost:8080/data.csv'"
 
     links = extractor.extract(text, "http://any.com")
-    urls = [l.url for l in links]
+    urls = [link.url for link in links]
 
     assert "https://other.com/ext.mp4" in urls
     assert "http://localhost:8080/data.csv" in urls

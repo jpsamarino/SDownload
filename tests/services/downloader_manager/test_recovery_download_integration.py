@@ -1,18 +1,19 @@
-import pytest
-import asyncio
 import json
 import os
 import shutil
-from pathlib import Path
 from datetime import datetime
-from sDownload.services.downloader_manager.recovery_download import (
-    RecoveryDownload,
-)
+from pathlib import Path
+
+import pytest
+
 from sDownload.file_system.local_storage import LocalStorage
 from sDownload.interfaces.models import (
     ChunkDownloadStats,
     ChunkRange,
     EDownloadStatus,
+)
+from sDownload.services.downloader_manager.recovery_download import (
+    RecoveryDownload,
 )
 
 
@@ -45,9 +46,7 @@ async def create_dummy_file(storage, name, size):
 
 
 @pytest.mark.asyncio
-async def test_recovery_flow_full_integration(
-    recovery_service, local_storage, temp_storage_dir
-):
+async def test_recovery_flow_full_integration(recovery_service, local_storage, temp_storage_dir):
     file_id = "test_file_123"
     total_size = 5000
 
@@ -76,15 +75,13 @@ async def test_recovery_flow_full_integration(
     )
 
     # 2. Save recovery info (lowering min_chunk_size to 100 to keep chunk_2)
-    await recovery_service.save_info(
-        file_id, total_size, [stats1, stats2], min_chunk_size=100
-    )
+    await recovery_service.save_info(file_id, total_size, [stats1, stats2], min_chunk_size=100)
 
     # 3. Verify JSON file exists and content is correct
     json_path = temp_storage_dir / f".sdown_resume_{file_id}.json"
     assert json_path.exists()
 
-    with open(json_path, "r") as f:
+    with open(json_path) as f:
         data = json.load(f)
 
     assert data["file_id"] == file_id
@@ -163,9 +160,7 @@ async def test_recovery_cleanup_and_corruption_integration(
     # 3. Verify disk state
     assert (temp_storage_dir / "valid.tmp").exists()
     assert not (temp_storage_dir / "small.tmp").exists()  # Should be deleted as useless
-    assert not (
-        temp_storage_dir / "corrupt.tmp"
-    ).exists()  # Should be deleted as corrupted
+    assert not (temp_storage_dir / "corrupt.tmp").exists()  # Should be deleted as corrupted
 
     # 4. Verify JSON content (only 'valid' should be there)
     loaded = await recovery_service.load_info(file_id)

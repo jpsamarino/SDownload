@@ -1,15 +1,17 @@
 import asyncio
+
 import httpx
+
 from sDownload.exceptions import (
-    SDownloadError,
+    AccessDeniedError,
+    CommunicationError,
     DownloadRequestError,
     DownloadTimeoutError,
-    ResourceNotFoundError,
-    AccessDeniedError,
-    ServerUnavailableError,
     NetworkError,
     ProtocolError,
-    CommunicationError,
+    ResourceNotFoundError,
+    SDownloadError,
+    ServerUnavailableError,
 )
 
 
@@ -36,6 +38,4 @@ def map_httpx_error(exc: Exception, url: str) -> Exception:
         return DownloadRequestError(url, exc)
     if isinstance(exc, SDownloadError):
         return exc
-    return CommunicationError(
-        f"Unexpected communication error: {exc}", url=url, original=exc
-    )
+    return CommunicationError(f"Unexpected communication error: {exc}", url=url, original=exc)

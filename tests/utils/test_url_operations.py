@@ -1,6 +1,6 @@
 import pytest
 
-from sDownload.utils import url_to_file_name, normalize_url
+from sDownload.utils import normalize_url, url_to_file_name
 
 
 @pytest.mark.parametrize(

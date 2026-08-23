@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from typing import Protocol
+
 from sDownload.interfaces.models import ResourceInfo
 
 

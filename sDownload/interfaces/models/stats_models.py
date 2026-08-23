@@ -1,11 +1,12 @@
-from typing import Callable
-from dataclasses import dataclass, field
-from enum import Enum
 import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+
 from .chunk_models import ChunkRange
 
 
-class EDownloadStatus(str, Enum):
+class EDownloadStatus(StrEnum):
     PENDING = "pending"
     DOWNLOADING = "downloading"
     AWAITING_SUCCESSION = "awaiting_succession"
@@ -48,9 +49,7 @@ class ChunkDownloadStats:
             if cb:
                 cb()
 
-    def add_limit_observer(
-        self, qt_max_useful_bytes: int, callback: Callable[[], None]
-    ):
+    def add_limit_observer(self, qt_max_useful_bytes: int, callback: Callable[[], None]):
         if self.bytes_downloaded >= qt_max_useful_bytes:
             callback()
             return
@@ -79,9 +78,7 @@ class ChunkDownloadStats:
         self.qt_bytes_last_update = self.bytes_downloaded
         now = time.monotonic()
         time_elapsed = now - self.last_update
-        self.progress = (
-            100.0 * self.bytes_downloaded / self.file_size if self.file_size else None
-        )
+        self.progress = 100.0 * self.bytes_downloaded / self.file_size if self.file_size else None
         self.speed_bps = qt_bytes_elapsed / time_elapsed if time_elapsed > 0 else 0.0
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
 
@@ -118,7 +115,5 @@ class DownloadStats:
         qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
         self.qt_bytes_last_update = self.bytes_downloaded
         time_elapsed_period = now - self.last_update
-        self.speed_bps = (
-            qt_bytes_elapsed / time_elapsed_period if time_elapsed_period > 0 else 0.0
-        )
+        self.speed_bps = qt_bytes_elapsed / time_elapsed_period if time_elapsed_period > 0 else 0.0
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update
