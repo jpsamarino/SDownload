@@ -19,7 +19,6 @@ select = [
     "SIM",   # flake8-simplify
 ]
 ignore = [
-    "B008",  # do not perform function calls in argument defaults
     "E501",  # line length (handled by formatter)
 ]
 
