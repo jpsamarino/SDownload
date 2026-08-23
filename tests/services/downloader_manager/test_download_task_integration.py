@@ -47,3 +47,48 @@ def test_download_task_initialization_with_non_existent_dir():
 
     with pytest.raises(StorageNotFoundError):
         DownloadTask(params)
+
+
+@pytest.mark.asyncio
+async def test_download_task_resolve_file_info_real_nginx(tmp_path, nginx_custom):
+    url = f"{nginx_custom['http']}/default/file_100k.bin"
+    params = DownloadTaskParams(
+        url=url,
+        dest_dir=str(tmp_path),
+        max_conn=4,
+        use_chunked=True,
+    )
+    task = DownloadTask(params)
+
+    info = await task._resolve_file_info()
+
+    assert info.file_name == "file_100k.bin"
+    assert info.file_size == 100 * 1024
+    assert info.server_accept_ranges is True
+    assert task.file_name == "file_100k.bin"
+    assert task.status == EDownloadStatus.PENDING
+    assert task.stats is not None
+    assert task.stats.file_size == 100 * 1024
+    assert task._use_chunked is True
+    assert task._max_conn == 4
+
+
+@pytest.mark.asyncio
+async def test_download_task_resolve_file_info_no_range_nginx(tmp_path, nginx_custom):
+    url = f"{nginx_custom['http']}/no_resume/file_10M.bin"
+    params = DownloadTaskParams(
+        url=url,
+        dest_dir=str(tmp_path),
+        max_conn=8,
+        use_chunked=True,
+    )
+    task = DownloadTask(params)
+
+    info = await task._resolve_file_info()
+
+    assert info.file_name == "file_10M.bin"
+    assert info.server_accept_ranges is False
+    assert task.file_name == "file_10M.bin"
+    assert task._use_chunked is False
+    assert task._max_conn == 1
+
