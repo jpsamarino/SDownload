@@ -18,7 +18,6 @@ from .httpx_error_mapper import map_httpx_error
 from .resource_explorer import explore_resource, DiscoveryTask
 from .extractors.protocol import DiscoveryMethod, ExtractedLink
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -98,7 +97,7 @@ class HttpxDownloader(DownloaderProtocol):
             except Exception as err:
                 raise map_httpx_error(err, url) from err
 
-    async def get_file_info(self, url: str) -> list[ResourceInfo]:
+    async def get_file_info(self, url: str) -> ResourceInfo:
         try:
             async with await self._get_client() as client:
                 async with client.stream(
