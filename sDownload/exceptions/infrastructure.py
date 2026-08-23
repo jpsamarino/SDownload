@@ -47,3 +47,17 @@ class StorageNotFoundError(StorageError):
         )
         super().__init__(msg, original=original)
         self.path = path
+
+
+class FileAlreadyExistsError(StorageError):
+    """Raised when a target file already exists in storage and overwrite is disabled."""
+
+    def __init__(self, path: str | None = None, original: Exception | None = None):
+        msg = (
+            f"File already exists in storage: {path}"
+            if path
+            else "File already exists in storage"
+        )
+        super().__init__(msg, original=original)
+        self.path = path
+

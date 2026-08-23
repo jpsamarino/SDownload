@@ -16,6 +16,7 @@ from .infrastructure import (
     StorageFullError,
     StoragePermissionError,
     StorageNotFoundError,
+    FileAlreadyExistsError,
 )
 from .data import (
     DataError,
@@ -45,6 +46,7 @@ __all__ = [
     "StorageFullError",
     "StoragePermissionError",
     "StorageNotFoundError",
+    "FileAlreadyExistsError",
     # Data
     "DataError",
     "ReconstructionError",

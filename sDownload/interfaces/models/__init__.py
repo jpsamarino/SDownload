@@ -11,6 +11,7 @@ from .proxy_models import ProxyConfigModel, EProxyType
 from .stats_models import ChunkDownloadStats, EDownloadStatus, DownloadStats
 from .config_models import URLConfig, DLManagerConfig, DownloadConfig
 from .recovery_models import RecoveryChunkDTO, RecoveryStateDTO, DownloadInfo
+from .file_match_model import FileMatchScore
 
 __all__ = [
     "ChunkRange",
@@ -31,4 +32,5 @@ __all__ = [
     "RecoveryChunkDTO",
     "RecoveryStateDTO",
     "DownloadInfo",
+    "FileMatchScore",
 ]

@@ -5,6 +5,7 @@ from .net import find_available_port
 from .get_url_extension import get_url_extension
 from .is_navigable import is_navigable
 from .navigable_config import navigable_extensions, navigable_content_types
+from .file_match_score import FileMatchScore, calculate_file_match_score
 
 __all__ = [
     "json_dumps",
@@ -18,4 +19,6 @@ __all__ = [
     "navigable_extensions",
     "navigable_content_types",
     "normalize_url",
+    "FileMatchScore",
+    "calculate_file_match_score",
 ]
