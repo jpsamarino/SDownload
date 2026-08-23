@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import aiofiles
 import aiofiles.os
 import os
@@ -78,7 +78,9 @@ class LocalStorage(FileStorageProtocol):
                 info = StoredFileInfo(
                     key=path.name,
                     size_bytes=stat.st_size,
-                    created_at=datetime.fromtimestamp(stat.st_ctime),
+                    created_at=datetime.fromtimestamp(
+                        stat.st_mtime, tz=timezone.utc
+                    ),
                 )
                 files.append(info)
             return files
@@ -94,7 +96,7 @@ class LocalStorage(FileStorageProtocol):
         return StoredFileInfo(
             key=key,
             size_bytes=stat.st_size,
-            created_at=datetime.fromtimestamp(stat.st_ctime),
+            created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
         )
 
     async def merge_binary_files(self, source_keys: list[str], dest_key: str) -> None:
