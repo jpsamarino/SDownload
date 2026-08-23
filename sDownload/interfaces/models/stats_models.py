@@ -88,7 +88,7 @@ class ChunkDownloadStats:
 
 @dataclass
 class DownloadStats:
-    file_size: int  # fix to None
+    file_size: int | None = None
     bytes_downloaded: int = 0
     qt_bytes_last_update: int = 0
     progress: float = 0.0
@@ -107,18 +107,18 @@ class DownloadStats:
         # use EMA and solve problem with speed_bps when set_bytes_downloaded is used to avoid negative speed
         now = time.monotonic()
         time_elapsed_avg = now - self.start_time
-        self.progress = (
-            100.0 * self.bytes_downloaded / self.file_size
-            if self.file_size > 0
-            else 0.0
-        )
+        if self.file_size and self.file_size > 0:
+            self.progress = 100.0 * self.bytes_downloaded / self.file_size
+        else:
+            self.progress = 0.0
+
         self.avg_speed_bps = (
-            self.bytes_downloaded / time_elapsed_avg if time_elapsed_avg > 0 else 0
+            self.bytes_downloaded / time_elapsed_avg if time_elapsed_avg > 0 else 0.0
         )
         qt_bytes_elapsed = self.bytes_downloaded - self.qt_bytes_last_update
         self.qt_bytes_last_update = self.bytes_downloaded
         time_elapsed_period = now - self.last_update
         self.speed_bps = (
-            qt_bytes_elapsed / time_elapsed_period if time_elapsed_period > 0 else 0
+            qt_bytes_elapsed / time_elapsed_period if time_elapsed_period > 0 else 0.0
         )
         self.last_update = now if qt_bytes_elapsed > 0 else self.last_update

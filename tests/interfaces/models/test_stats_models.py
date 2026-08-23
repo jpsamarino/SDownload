@@ -39,3 +39,30 @@ def test_chunk_download_stats_set_status_restriction():
     # Invalid status
     with pytest.raises(ValueError, match="Use set_error"):
         stats.set_status(EDownloadStatus.ERROR)
+
+
+def test_download_stats_with_none_file_size():
+    from sDownload.interfaces.models import DownloadStats
+
+    stats = DownloadStats(file_size=None)
+    assert stats.file_size is None
+    assert stats.bytes_downloaded == 0
+    assert stats.progress == 0.0
+
+    stats.add_qt_bytes_downloaded(1024)
+    stats.update()
+
+    assert stats.bytes_downloaded == 1024
+    assert stats.progress == 0.0
+    assert stats.avg_speed_bps >= 0.0
+
+
+def test_download_stats_with_zero_file_size():
+    from sDownload.interfaces.models import DownloadStats
+
+    stats = DownloadStats(file_size=0)
+    assert stats.file_size == 0
+    stats.add_qt_bytes_downloaded(512)
+    stats.update()
+    assert stats.progress == 0.0
+
