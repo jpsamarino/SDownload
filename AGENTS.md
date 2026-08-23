@@ -27,17 +27,29 @@
 .\venv\Scripts\pytest -v tests/
 ```
 
-## Como Rodar Linting
+## Como Rodar Linting e Formatação
+
+### Ruff (Linter & Formatter Oficial)
 
 ```bash
-.\venv\Scripts\pylint <modulo_ou_arquivo>
+# Verificar lint
+.\venv\Scripts\ruff.exe check .
+
+# Aplicar correções automáticas
+.\venv\Scripts\ruff.exe check --fix .
+
+# Formatar código
+.\venv\Scripts\ruff.exe format .
+
+# Checar formatação
+.\venv\Scripts\ruff.exe format --check .
 ```
 
-### Configurações do pylint (`.pylintrc`)
+### Configurações do Ruff (`ruff.toml`)
 
+- Target Python: `py312`
 - Max line length: 100
-- Ignora: `venv`, `.venv`
-- Disable: `missing-docstring`, `too-few-public-methods`, etc.
+- Regras ativas: `E`, `W`, `F`, `I` (isort), `UP` (pyupgrade), `B` (bugbear), `C4`, `SIM`
 
 ## Estrutura do Projeto
 
