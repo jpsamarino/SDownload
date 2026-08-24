@@ -108,10 +108,16 @@ class HttpxDownloader(DownloaderProtocol):
                 content_range = headers.get("Content-Range")
                 try:
                     if status_code == 206 and content_range and "/" in content_range:
-                        full_size = int(content_range.split("/", 1)[1])
-                        resumable = True
+                        size_part = content_range.split("/", 1)[1].strip()
+                        if size_part == "*" or not size_part.isdigit():
+                            full_size = 0
+                            resumable = True
+                        else:
+                            full_size = int(size_part)
+                            resumable = True
                     else:
-                        full_size = int(headers.get("Content-Length", 0))
+                        cl_header = headers.get("Content-Length")
+                        full_size = int(cl_header) if cl_header and cl_header.isdigit() else 0
                         resumable = False
                 except Exception as size_err:
                     raise ResourceInfoError(

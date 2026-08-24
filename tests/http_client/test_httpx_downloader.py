@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from sDownload.exceptions import DownloadRequestError, SDownloadError
@@ -61,6 +62,28 @@ async def test_httpx_get_file_info_no_name_in_url(nginx_custom):
     result = await downloader.get_file_info(f"{nginx_custom['http']}/no_filename")
     assert result.file_name == "no_filename.bin"
     assert result.file_size == 1048576
+
+
+@pytest.mark.asyncio
+async def test_httpx_get_file_info_stream_chunked_integration(nginx_custom):
+    """Real NGINX integration: get_file_info on dynamically compressed chunked stream"""
+    config = HttpConfigModel(timeout_connect_s=20.0)
+    downloader = HttpxDownloader(config)
+    result = await downloader.get_file_info(f"{nginx_custom['http']}/stream_chunked/file_100k.bin")
+    assert result.file_name == "file_100k.bin"
+    assert result.file_size == 0
+    assert result.server_accept_ranges is False
+
+
+@pytest.mark.asyncio
+async def test_httpx_download_chunk_stream_chunked_integration(nginx_custom):
+    """Real NGINX integration: download_chunk on chunked stream without Content-Length"""
+    config = HttpConfigModel(timeout_connect_s=20.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/stream_chunked/file_100k.bin"
+    chunks = [chunk async for chunk in downloader.download_chunk(url)]
+    data = b"".join(chunks)
+    assert len(data) == 100 * 1024
 
 
 @pytest.mark.asyncio
@@ -240,6 +263,50 @@ async def test_httpx_list_resources_with_regex(nginx_custom):
 
     assert any("leaf.txt" in r for r in resources)
     assert len(resources) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_file_info_content_range_wildcard():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            206,
+            headers={"Content-Range": "bytes 0-0/*", "ETag": "stream-etag"},
+            content=b"A",
+        )
+
+    downloader = HttpxDownloader(HttpConfigModel())
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def mock_get_client():
+        return mock_client
+
+    downloader._get_client = mock_get_client
+
+    info = await downloader.get_file_info("http://test.com/stream.bin")
+    assert info.file_size == 0
+    assert info.server_accept_ranges is True
+
+
+@pytest.mark.asyncio
+async def test_get_file_info_missing_content_length():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Transfer-Encoding": "chunked"},
+            stream=httpx.ByteStream(b"A"),
+        )
+
+    downloader = HttpxDownloader(HttpConfigModel())
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def mock_get_client():
+        return mock_client
+
+    downloader._get_client = mock_get_client
+
+    info = await downloader.get_file_info("http://test.com/stream.bin")
+    assert info.file_size == 0
+    assert info.server_accept_ranges is False
 
 
 # @pytest.mark.asyncio
