@@ -1,4 +1,4 @@
-from .file_match_score import FileMatchScore, calculate_file_match_score
+from .file_policy_resolver import find_available_file_name, resolve_file_policy
 from .get_url_extension import get_url_extension
 from .is_navigable import is_navigable
 from .json_utils import json_dumps, parse_json_date
@@ -19,6 +19,6 @@ __all__ = [
     "navigable_extensions",
     "navigable_content_types",
     "normalize_url",
-    "FileMatchScore",
-    "calculate_file_match_score",
+    "find_available_file_name",
+    "resolve_file_policy",
 ]
