@@ -708,3 +708,118 @@ async def test_chunk_manager_cancel_and_restart_integration(setup_downloader_and
     listed_final = await storage.list_data()
     file_info = next(f for f in listed_final if f.key == chunk_params.file_name)
     assert file_info.size_bytes == 102400
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_stream_chunked_open_ended_integration(nginx_custom, storage):
+    """
+    Integration: ChunkManager downloads an open-ended chunk [0, None] from Nginx stream
+    where file_size is unknown/0 and server uses Transfer-Encoding: chunked.
+    """
+    config = HttpConfigModel(timeout_connect_s=20.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/stream_chunked/file_100k.bin"
+    info = await downloader.get_file_info(url)
+
+    chunk_params = ChunkManagerParams(
+        file_name="stream_test_100k.bin",
+        file_size=info.file_size,  # 0 or None for streams
+        download_url=url,
+    )
+
+    open_range = ChunkRange(0, None)
+
+    async with ChunkManager(chunk_params, downloader, storage) as manager:
+        manager.start_chunk(open_range)
+        completed = await manager.wait_for_completed_chunks()
+
+        assert len(completed) == 1
+        assert completed[0].range == open_range
+        assert completed[0].status == EDownloadStatus.COMPLETED
+        assert completed[0].bytes_downloaded == 100 * 1024
+
+        # Final merge and verify
+        dest_file = await manager.merge_chunks(cleanup=True)
+        assert dest_file == "stream_test_100k.bin"
+
+    stored_info = await storage.get_data_info("stream_test_100k.bin")
+    assert stored_info is not None
+    assert stored_info.size_bytes == 100 * 1024
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_stream_no_resume_integration(nginx_custom, storage):
+    """
+    Integration: ChunkManager downloading from an endpoint with Accept-Ranges: none.
+    """
+    config = HttpConfigModel(timeout_connect_s=20.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/stream_no_resume/file_100k.bin"
+    info = await downloader.get_file_info(url)
+
+    chunk_params = ChunkManagerParams(
+        file_name="stream_no_resume.bin",
+        file_size=info.file_size,
+        download_url=url,
+    )
+
+    open_range = ChunkRange(0, None)
+
+    async with ChunkManager(chunk_params, downloader, storage) as manager:
+        manager.start_chunk(open_range)
+        completed = await manager.wait_for_completed_chunks()
+
+        assert len(completed) == 1
+        assert completed[0].status == EDownloadStatus.COMPLETED
+        assert completed[0].bytes_downloaded == 100 * 1024
+
+        dest_file = await manager.merge_chunks(cleanup=True)
+        assert dest_file == "stream_no_resume.bin"
+
+    stored = await storage.get_data_info("stream_no_resume.bin")
+    assert stored is not None
+    assert stored.size_bytes == 100 * 1024
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_stream_slow_1mb_integration(nginx_custom, storage):
+    """
+    Integration: ChunkManager downloading a sustained 1 MB stream at 100 KB/s from Nginx.
+    Verifies that ChunkManager handles open-ended stream chunks and records progress.
+    """
+    config = HttpConfigModel(timeout_connect_s=30.0)
+    downloader = HttpxDownloader(config)
+    url = f"{nginx_custom['http']}/stream_slow_1mb/file_1M.bin"
+    info = await downloader.get_file_info(url)
+
+    chunk_params = ChunkManagerParams(
+        file_name="stream_slow_1mb.bin",
+        file_size=info.file_size,
+        download_url=url,
+    )
+
+    open_range = ChunkRange(0, None)
+
+    async with ChunkManager(chunk_params, downloader, storage) as manager:
+        manager.start_chunk(open_range)
+
+        # Poll while downloading to observe non-zero bytes growth
+        samples: list[int] = []
+        while (
+            open_range in manager.stats
+            and manager.stats[open_range].status == EDownloadStatus.DOWNLOADING
+        ):
+            await asyncio.sleep(1.0)
+            samples.append(manager.stats[open_range].bytes_downloaded)
+
+        completed = await manager.wait_for_completed_chunks()
+        assert len(completed) == 1
+        assert completed[0].status == EDownloadStatus.COMPLETED
+        assert completed[0].bytes_downloaded == 1024 * 1024
+
+        dest_file = await manager.merge_chunks(cleanup=True)
+        assert dest_file == "stream_slow_1mb.bin"
+
+    stored = await storage.get_data_info("stream_slow_1mb.bin")
+    assert stored is not None
+    assert stored.size_bytes == 1024 * 1024

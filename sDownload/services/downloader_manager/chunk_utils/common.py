@@ -26,7 +26,7 @@ def get_effective_range_info(
     if chunk_range.end is not None:
         effective_end = chunk_range.end
         total_bytes = effective_end - chunk_range.start + 1
-    elif total_file_size is not None:
+    elif total_file_size is not None and total_file_size > 0:
         effective_end = total_file_size - 1
         total_bytes = effective_end - chunk_range.start + 1
     else:

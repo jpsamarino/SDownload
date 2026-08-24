@@ -384,12 +384,17 @@ class ChunkManager:
         """
         Merges completed chunks into the final file.
         """
+        effective_size = (
+            self._params.file_size
+            if self._params.file_size and self._params.file_size > 0
+            else None
+        )
         try:
             dest_key = await reconstruct_file(
                 storage=self._storage,
                 stats_list=list(self._chunks_stats.values()),
                 final_filename=self._params.file_name,
-                total_file_size=self._params.file_size,
+                total_file_size=effective_size,
             )
         except ReconstructionError:
             logger.error("Failed to reconstruct file.")
