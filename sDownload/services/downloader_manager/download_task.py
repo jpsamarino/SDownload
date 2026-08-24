@@ -10,6 +10,7 @@ from sDownload.http_client import HttpxDownloader
 from sDownload.interfaces.models import (
     DownloadStats,
     EDownloadStatus,
+    EFileAction,
     HttpConfigModel,
     ResourceInfo,
 )
@@ -20,7 +21,7 @@ from sDownload.interfaces.protocols import (
     FileStorageProtocol,
 )
 from sDownload.services.downloader_manager.strategies import MultiChunkDownloadStrategy
-from sDownload.utils import calculate_file_match_score
+from sDownload.utils import resolve_file_policy
 
 logger = logging.getLogger(__name__)
 
@@ -29,30 +30,39 @@ class DownloadTask:
     def __init__(
         self,
         params: DownloadTaskParams,
-        *,
-        strategy: DownloadStrategyProtocol | None = None,
         downloader: DownloaderProtocol | None = None,
         storage: FileStorageProtocol | None = None,
-    ):
+        strategy: DownloadStrategyProtocol | None = None,
+    ) -> None:
         self._params = params
-        self._downloader = downloader or HttpxDownloader(
-            config=HttpConfigModel(headers=params.headers)
-        )
-        self._storage = storage or LocalStorage(storage_dir=params.dest_dir)
-        self._strategy = strategy or MultiChunkDownloadStrategy(
+
+        # Resolve storage directory: Storage takes the parent dir and targets the dest_dir name
+        dest_path = params.dest_dir
+        self._storage: FileStorageProtocol = storage or LocalStorage(storage_dir=dest_path)
+
+        # Default HttpDownloader if none provided
+        http_config = HttpConfigModel(headers=params.headers)
+        self._downloader: DownloaderProtocol = downloader or HttpxDownloader(http_config)
+
+        # Default DownloadStrategy
+        self._strategy: DownloadStrategyProtocol = strategy or MultiChunkDownloadStrategy(
             max_conn=params.max_conn,
             use_chunked_download=params.use_chunked,
         )
+
+        # Download state
+        self._status: EDownloadStatus = EDownloadStatus.PENDING
+        self._dl_stats: DownloadStats | None = None
         self._file_name: str | None = params.file_name
         self._resource_info: ResourceInfo | None = None
-        self._dl_stats: DownloadStats | None = None
-        self._controller_task: asyncio.Task | None = None
-        self._pause_event = asyncio.Event()
-        self._pause_event.set()
-        self._status: EDownloadStatus = EDownloadStatus.PENDING
+        self._last_error: Exception | None = None
+
+        # Internal concurrency & chunking controls
         self._use_chunked: bool = params.use_chunked
         self._max_conn: int = params.max_conn
-        self._last_error: Exception | None = None
+
+        # Async supervisor task handle
+        self._controller_task: asyncio.Task | None = None
 
     @property
     def status(self) -> EDownloadStatus:
@@ -90,46 +100,42 @@ class DownloadTask:
             if not self._file_name:
                 self._file_name = info.file_name
 
-            # 2. Check if file already exists in storage
-            match_score = await calculate_file_match_score(
+            # 2. Resolve file policy & handle collisions
+            resolution = await resolve_file_policy(
                 storage=self._storage,
                 file_name=self._file_name,
                 expected_size=info.file_size,
                 remote_created_at=info.file_created_at,
+                policy=self._params.file_policy,
+                is_generated_name=not bool(self._params.file_name),
             )
 
-            if match_score.file_exists:
-                if self._params.overwrite_existing:
-                    logger.info(
-                        "File %s already exists in storage. overwrite_existing is True, will overwrite.",
-                        self._file_name,
-                    )
-                elif match_score.score >= self._params.min_trust_score:
-                    logger.info(
-                        "File %s exists in storage with high confidence (score=%.2f, threshold=%.2f). "
-                        "Marking completed: %s",
-                        self._file_name,
-                        match_score.score,
-                        self._params.min_trust_score,
-                        match_score.reason,
-                    )
-                    self._status = EDownloadStatus.COMPLETED
-                    self._dl_stats = DownloadStats(
-                        file_size=info.file_size,
-                        bytes_downloaded=info.file_size,
-                        progress=100.0,
-                    )
-                    return info
-                else:
-                    logger.warning(
-                        "File %s exists in storage but is not trusted (score=%.2f < threshold=%.2f) "
-                        "and overwrite_existing is False: %s",
-                        self._file_name,
-                        match_score.score,
-                        self._params.min_trust_score,
-                        match_score.reason,
-                    )
-                    raise FileAlreadyExistsError(self._file_name)
+            if resolution.action == EFileAction.ERROR:
+                logger.warning(
+                    "File policy %s failed for %s: %s",
+                    self._params.file_policy,
+                    resolution.target_file_name,
+                    resolution.reason,
+                )
+                raise FileAlreadyExistsError(resolution.target_file_name)
+
+            if resolution.action == EFileAction.REUSE:
+                logger.info(
+                    "File %s exists and policy is %s. Marking completed: %s",
+                    resolution.target_file_name,
+                    self._params.file_policy,
+                    resolution.reason,
+                )
+                self._status = EDownloadStatus.COMPLETED
+                self._dl_stats = DownloadStats(
+                    file_size=info.file_size,
+                    bytes_downloaded=info.file_size,
+                    progress=100.0,
+                )
+                return info
+
+            # Action is DOWNLOAD (update filename if auto-renamed)
+            self._file_name = resolution.target_file_name
 
             # 3. Adapt chunking & concurrency to server capabilities
             if not info.server_accept_ranges or not info.file_size or info.file_size <= 0:

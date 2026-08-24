@@ -10,6 +10,7 @@ from sDownload.exceptions import (
 )
 from sDownload.interfaces.models import (
     EDownloadStatus,
+    EFilePolicy,
     ResourceInfo,
     StoredFileInfo,
 )
@@ -58,8 +59,14 @@ class MockStorage(FileStorageProtocol):
     async def shrink_file_to(self, key: str, target_size_bytes: int):
         pass
 
-    async def list_data(self) -> list[str]:
-        return list(self.existing_files.keys())
+    async def move_data(self, src_key: str, dest_key: str):
+        pass
+
+    async def crop_file(self, key: str, start_byte: int, end_byte: int):
+        pass
+
+    async def list_data(self) -> list[StoredFileInfo]:
+        return list(self.existing_files.values())
 
     def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         async def empty():
@@ -164,8 +171,7 @@ async def test_resolve_file_info_unknown_file_size_downgrades_chunking(tmp_path,
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_trusted_no_overwrite(tmp_path, base_resource):
-    # File created just now (age <= 1h, score = 0.5 + 0.3 = 0.8 >= 0.7)
+async def test_resolve_file_info_existing_file_smart_reuse_fresh(tmp_path, base_resource):
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=10_000_000,
@@ -176,8 +182,7 @@ async def test_resolve_file_info_existing_file_trusted_no_overwrite(tmp_path, ba
     params = DownloadTaskParams(
         url="https://example.com/remote_file.zip",
         dest_dir=str(tmp_path),
-        overwrite_existing=False,
-        min_trust_score=0.7,
+        file_policy=EFilePolicy.SMART_REUSE,
     )
     task = DownloadTask(params, downloader=downloader, storage=storage)
 
@@ -188,10 +193,7 @@ async def test_resolve_file_info_existing_file_trusted_no_overwrite(tmp_path, ba
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_untrusted_no_overwrite_raises(
-    tmp_path, base_resource
-):
-    # File created 60 days ago (score = 0.50 < min_trust_score 0.70)
+async def test_resolve_file_info_existing_file_smart_reuse_stale_raises(tmp_path, base_resource):
     old_time = datetime.now(UTC) - timedelta(days=60)
     existing_file = StoredFileInfo(
         key="remote_file.zip",
@@ -203,8 +205,7 @@ async def test_resolve_file_info_existing_file_untrusted_no_overwrite_raises(
     params = DownloadTaskParams(
         url="https://example.com/remote_file.zip",
         dest_dir=str(tmp_path),
-        overwrite_existing=False,
-        min_trust_score=0.7,
+        file_policy=EFilePolicy.SMART_REUSE,
     )
     task = DownloadTask(params, downloader=downloader, storage=storage)
 
@@ -215,8 +216,7 @@ async def test_resolve_file_info_existing_file_untrusted_no_overwrite_raises(
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_untrusted_with_overwrite(tmp_path, base_resource):
-    # File created 60 days ago (score = 0.50), but overwrite_existing=True
+async def test_resolve_file_info_existing_file_policy_overwrite(tmp_path, base_resource):
     old_time = datetime.now(UTC) - timedelta(days=60)
     existing_file = StoredFileInfo(
         key="remote_file.zip",
@@ -228,8 +228,7 @@ async def test_resolve_file_info_existing_file_untrusted_with_overwrite(tmp_path
     params = DownloadTaskParams(
         url="https://example.com/remote_file.zip",
         dest_dir=str(tmp_path),
-        overwrite_existing=True,
-        min_trust_score=0.7,
+        file_policy=EFilePolicy.OVERWRITE,
     )
     task = DownloadTask(params, downloader=downloader, storage=storage)
 
@@ -239,9 +238,29 @@ async def test_resolve_file_info_existing_file_untrusted_with_overwrite(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_resolve_file_info_existing_file_size_mismatch_no_overwrite_raises(
-    tmp_path, base_resource
-):
+async def test_resolve_file_info_existing_file_policy_auto_rename(tmp_path, base_resource):
+    existing_file = StoredFileInfo(
+        key="remote_file.zip",
+        size_bytes=10_000_000,
+        created_at=datetime.now(UTC),
+    )
+    downloader = MockDownloader(base_resource)
+    storage = MockStorage(existing_files={"remote_file.zip": existing_file})
+    params = DownloadTaskParams(
+        url="https://example.com/remote_file.zip",
+        dest_dir=str(tmp_path),
+        file_policy=EFilePolicy.AUTO_RENAME,
+    )
+    task = DownloadTask(params, downloader=downloader, storage=storage)
+
+    await task._resolve_file_info()
+
+    assert task._status == EDownloadStatus.PENDING
+    assert task._file_name == "remote_file_1.zip"
+
+
+@pytest.mark.asyncio
+async def test_resolve_file_info_existing_file_size_mismatch_raises(tmp_path, base_resource):
     existing_file = StoredFileInfo(
         key="remote_file.zip",
         size_bytes=5_000_000,  # Half size
@@ -252,7 +271,7 @@ async def test_resolve_file_info_existing_file_size_mismatch_no_overwrite_raises
     params = DownloadTaskParams(
         url="https://example.com/remote_file.zip",
         dest_dir=str(tmp_path),
-        overwrite_existing=False,
+        file_policy=EFilePolicy.REUSE_SAME_SIZE,
     )
     task = DownloadTask(params, downloader=downloader, storage=storage)
 
