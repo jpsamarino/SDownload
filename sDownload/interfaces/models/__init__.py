@@ -6,7 +6,7 @@ from .chunk_models import (
 )
 from .config_models import DLManagerConfig, DownloadConfig, URLConfig
 from .file_info_model import ResourceInfo
-from .file_match_model import FileMatchScore
+from .file_policy_model import EFileAction, EFilePolicy, FilePolicyResolution
 from .filesystem_info_model import StoredFileInfo
 from .http_config_model import HttpConfigModel
 from .proxy_models import EProxyType, ProxyConfigModel
@@ -32,5 +32,7 @@ __all__ = [
     "RecoveryChunkDTO",
     "RecoveryStateDTO",
     "DownloadInfo",
-    "FileMatchScore",
+    "EFilePolicy",
+    "EFileAction",
+    "FilePolicyResolution",
 ]

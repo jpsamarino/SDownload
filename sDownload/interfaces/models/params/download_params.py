@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from sDownload.interfaces.models.file_policy_model import EFilePolicy
+
 
 @dataclass(frozen=True)
 class DownloadTaskParams:
@@ -18,8 +20,7 @@ class DownloadTaskParams:
     max_conn: int = 4
     max_conn_per_server: int = 1
     target_speed_bytes: int | None = None
-    overwrite_existing: bool = False
-    min_trust_score: float = 0.7
+    file_policy: EFilePolicy = EFilePolicy.SMART_REUSE
     enable_recovery: bool = True
     use_chunked: bool = True
 
