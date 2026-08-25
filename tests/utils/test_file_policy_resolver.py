@@ -454,8 +454,8 @@ async def test_resolve_policy_synthetic_name_unknown_size_auto_renames():
 
 
 @pytest.mark.asyncio
-async def test_resolve_policy_synthetic_name_reuse_same_size_auto_renames():
-    """Synthetic filename with REUSE_SAME_SIZE & size mismatch auto-renames."""
+async def test_resolve_policy_synthetic_name_reuse_same_size_mismatch_errors():
+    """Synthetic filename with REUSE_SAME_SIZE & size mismatch raises ERROR (strict size policy)."""
     files = {
         "api_data.bin": StoredFileInfo(
             key="api_data.bin", size_bytes=2000, created_at=datetime.now(UTC)
@@ -470,9 +470,8 @@ async def test_resolve_policy_synthetic_name_reuse_same_size_auto_renames():
         policy=EFilePolicy.REUSE_SAME_SIZE,
         is_generated_name=True,
     )
-    assert res.action == EFileAction.DOWNLOAD
-    assert res.target_file_name == "api_data_1.bin"
-    assert res.is_renamed is True
+    assert res.action == EFileAction.ERROR
+    assert "Size mismatch for REUSE_SAME_SIZE" in res.reason
 
 
 @pytest.mark.asyncio

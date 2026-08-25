@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from sDownload.global_settings import global_settings
+
 from .http_config_model import HttpConfigModel
 
 
@@ -35,8 +37,12 @@ class URLConfig:
 class DLManagerConfig:
     urls_config: list[URLConfig] | None = None
     abort_on_first_error: bool = False
-    max_simultaneous_downloads: int | None = 10
-    max_connections_per_download: int | None = 5
+    max_simultaneous_downloads: int | None = field(
+        default_factory=lambda: global_settings.max_simultaneous_downloads
+    )
+    max_connections_per_download: int | None = field(
+        default_factory=lambda: global_settings.max_connections_per_download
+    )
     auto_start: bool = True
     destination_folder: str | None = "."
     destination_handler: object | None = "."

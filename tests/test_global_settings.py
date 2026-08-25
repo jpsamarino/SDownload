@@ -2,8 +2,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from sDownload.file_system import LocalStorage
 from sDownload.global_settings import GlobalSettings, global_settings
-from sDownload.interfaces.models import EFileAction, EFilePolicy, StoredFileInfo
+from sDownload.interfaces.models import (
+    DLManagerConfig,
+    EFileAction,
+    EFilePolicy,
+    HttpConfigModel,
+    StoredFileInfo,
+)
+from sDownload.services.downloader_manager.strategies import MultiChunkDownloadStrategy
 from sDownload.utils.file_policy_resolver import resolve_file_policy
 
 
@@ -21,6 +29,29 @@ def test_global_settings_defaults():
     assert settings.clock_skew_tolerance_seconds == 300
     assert settings.default_timeout_connect_s == 15.0
     assert settings.default_chunk_size_bytes == 1024 * 1024
+    assert settings.default_storage_dir == "storage"
+    assert settings.default_io_buffer_size_bytes == 1024 * 1024
+    assert settings.max_scrape_size_bytes == 1024 * 1024
+    assert settings.probe_timeout_s == 2.0
+    assert settings.min_chunk_split_size_bytes == 2 * 1024 * 1024
+    assert settings.max_simultaneous_downloads == 10
+    assert settings.max_connections_per_download == 5
+    assert settings.monitor_update_interval_s == 0.5
+
+
+def test_models_inherit_global_settings_defaults(tmp_path):
+    http_cfg = HttpConfigModel()
+    assert http_cfg.timeout_connect_s == global_settings.default_timeout_connect_s
+
+    dl_mgr_cfg = DLManagerConfig()
+    assert dl_mgr_cfg.max_simultaneous_downloads == global_settings.max_simultaneous_downloads
+    assert dl_mgr_cfg.max_connections_per_download == global_settings.max_connections_per_download
+
+    storage = LocalStorage(storage_dir=tmp_path)
+    assert storage.io_buffer_size == global_settings.default_io_buffer_size_bytes
+
+    strategy = MultiChunkDownloadStrategy(max_conn=4)
+    assert strategy.min_chunk_size == global_settings.min_chunk_split_size_bytes
 
 
 @pytest.mark.asyncio

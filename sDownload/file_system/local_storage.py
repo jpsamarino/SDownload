@@ -8,6 +8,7 @@ import aiofiles
 import aiofiles.os
 
 from sDownload.exceptions import StorageNotFoundError
+from sDownload.global_settings import global_settings
 from sDownload.interfaces.models import StoredFileInfo
 from sDownload.interfaces.protocols import (
     FileRangeParams,
@@ -20,21 +21,26 @@ from .os_error_mapper import map_os_error
 class LocalStorage(FileStorageProtocol):
     def __init__(
         self,
-        storage_dir: Path | str = "storage",
+        storage_dir: Path | str | None = None,
         chunk_size: int = 8 * 1024,
-        io_buffer_size: int = 1024 * 1024,  # 1MB for heavy operations
+        io_buffer_size: int | None = None,
     ):
         """
         :param storage_dir: path that will be used to store data.
         :param chunk_size: size of the chunks in bytes for streaming.
         :param io_buffer_size: size of the buffer for heavy I/O operations (crop/merge).
         """
-        self.storage_dir = Path(storage_dir).resolve()
+        chosen_dir = storage_dir if storage_dir is not None else global_settings.default_storage_dir
+        self.storage_dir = Path(chosen_dir).resolve()
         if not self.storage_dir.parent.exists():
             raise StorageNotFoundError(str(self.storage_dir.parent))
         self.storage_dir.mkdir(parents=False, exist_ok=True)
         self.chunk_size = chunk_size
-        self.io_buffer_size = io_buffer_size
+        self.io_buffer_size = (
+            io_buffer_size
+            if io_buffer_size is not None
+            else global_settings.default_io_buffer_size_bytes
+        )
 
     async def get_binary_data(self, key: str) -> AsyncIterable[bytes]:
         path = self.storage_dir / key

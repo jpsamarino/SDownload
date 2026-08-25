@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from sDownload.global_settings import global_settings
 from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
 
 logger = logging.getLogger(__name__)
@@ -9,11 +10,14 @@ logger = logging.getLogger(__name__)
 async def monitor_download_progress(
     chunks_stats: dict[ChunkRange, ChunkDownloadStats],
     file_name: str,
-    interval: float = 0.5,
+    interval: float | None = None,
 ) -> None:
     """
     Periodically updates the download progress stats with a high-performance single-pass loop.
     """
+    effective_interval = (
+        interval if interval is not None else global_settings.monitor_update_interval_s
+    )
     is_active = True
     try:
         while is_active:
@@ -55,7 +59,7 @@ async def monitor_download_progress(
                 logger.debug("(%s) No active or pending chunks. Stopping monitor.", file_name)
 
             if is_active:
-                await asyncio.sleep(interval)
+                await asyncio.sleep(effective_interval)
 
     except asyncio.CancelledError:
         logger.debug("(%s) Monitor cancelled.", file_name)

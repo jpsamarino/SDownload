@@ -122,8 +122,7 @@ async def resolve_file_policy(
     if (
         is_generated_name
         and not size_matched
-        and policy
-        in (EFilePolicy.SMART_REUSE, EFilePolicy.REUSE_OR_UPDATE, EFilePolicy.REUSE_SAME_SIZE)
+        and policy in (EFilePolicy.SMART_REUSE, EFilePolicy.REUSE_OR_UPDATE)
     ):
         available_name = await find_available_file_name(storage, file_name)
         size_desc = f"{expected_size}B" if size_known else "unknown"

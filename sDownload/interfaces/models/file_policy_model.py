@@ -10,8 +10,8 @@ class EFilePolicy(StrEnum):
         When a URL or endpoint does not specify an explicit filename (e.g. `https://api.com/export`),
         SDownload synthesizes a fallback name (e.g. `export.bin`). If a local file with the same
         synthetic name already exists in storage and identity cannot be confirmed (i.e. size differs
-        or is unknown), policies `SMART_REUSE`, `REUSE_OR_UPDATE`, and `REUSE_SAME_SIZE` will
-        automatically rename the new download (e.g. `export_1.bin`) to avoid collisions across endpoints.
+        or is unknown), policies `SMART_REUSE` and `REUSE_OR_UPDATE` will automatically rename the
+        new download (e.g. `export_1.bin`) to avoid collisions across endpoints.
     """
 
     OVERWRITE = "overwrite"
@@ -52,7 +52,7 @@ class EFilePolicy(StrEnum):
     Size-only reuse policy (ignores modification timestamps).
     - Reuses (REUSE) only if: Exact size matches.
     - Otherwise: Raises FileAlreadyExistsError (ERROR) if size differs or is unknown.
-    - Synthetic filenames: Auto-renames (file_1.bin) if size differs or is unknown.
+    - Synthetic filenames: Follows strict size matching (raises ERROR if size differs or is unknown).
     - Use case: Immutable static assets with known sizes (e.g., software releases, ISOs, finalized media).
     """
 

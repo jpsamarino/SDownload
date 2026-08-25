@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from sDownload.global_settings import global_settings
 from sDownload.utils import get_url_extension, is_navigable
 
 from .extractors.factory import ExtractorFactory
@@ -117,25 +118,30 @@ async def explore_resource(
     url: str,
     client: httpx.AsyncClient,
     method_hint: DiscoveryMethod = DiscoveryMethod.UNKNOWN,
-    max_scrape_size: int = 1048576,
+    max_scrape_size: int | None = None,
     process_only_files: bool = False,
 ) -> DiscoveryResult:
+    effective_scrape_size = (
+        max_scrape_size if max_scrape_size is not None else global_settings.max_scrape_size_bytes
+    )
 
     if method_hint != DiscoveryMethod.UNKNOWN:
         return await _explore_with_method(
-            url, client, method_hint, max_scrape_size, process_only_files
+            url, client, method_hint, effective_scrape_size, process_only_files
         )
 
     logger.debug(f"Probing (OPTIONS) unknown resource: {url}")
     try:
-        opt_resp = await client.options(url, timeout=2.0, follow_redirects=True)
+        opt_resp = await client.options(
+            url, timeout=global_settings.probe_timeout_s, follow_redirects=True
+        )
 
         dav_header = opt_resp.headers.get("DAV")
         allow_header = opt_resp.headers.get("Allow", "")
 
         if dav_header or "PROPFIND" in allow_header and not process_only_files:
             return await _explore_with_method(
-                url, client, DiscoveryMethod.PROPFIND, max_scrape_size
+                url, client, DiscoveryMethod.PROPFIND, effective_scrape_size
             )
 
         ct = opt_resp.headers.get("Content-Type", "")
@@ -149,7 +155,7 @@ async def explore_resource(
 
     if process_only_files:
         return DiscoveryResult()
-    return await _explore_with_method(url, client, DiscoveryMethod.GET, max_scrape_size)
+    return await _explore_with_method(url, client, DiscoveryMethod.GET, effective_scrape_size)
 
 
 async def _explore_with_method(
