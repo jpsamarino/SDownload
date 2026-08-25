@@ -47,18 +47,54 @@ class DummyStorage(FileStorageProtocol):
         return list(self.files.values())
 
 
-def test_split_stem_and_extension():
-    # Simple extension
-    assert _split_stem_and_extension("file.zip") == ("file", ".zip")
-    assert _split_stem_and_extension("video.mp4") == ("video", ".mp4")
-
-    # Compound extensions
-    assert _split_stem_and_extension("archive.tar.gz") == ("archive", ".tar.gz")
-    assert _split_stem_and_extension("backup.tar.bz2") == ("backup", ".tar.bz2")
-    assert _split_stem_and_extension("data.tar.xz") == ("data", ".tar.xz")
-
-    # No extension
-    assert _split_stem_and_extension("no_ext_file") == ("no_ext_file", "")
+@pytest.mark.parametrize(
+    "input_name,expected_stem,expected_ext",
+    [
+        # Standard single extensions
+        ("file.zip", "file", ".zip"),
+        ("video.mp4", "video", ".mp4"),
+        ("document.pdf", "document", ".pdf"),
+        ("photo.PNG", "photo", ".PNG"),
+        ("data.json", "data", ".json"),
+        # Double tarball extensions (all compression variants)
+        ("archive.tar.gz", "archive", ".tar.gz"),
+        ("archive.TAR.GZ", "archive", ".TAR.GZ"),
+        ("backup.tar.bz2", "backup", ".tar.bz2"),
+        ("data.tar.xz", "data", ".tar.xz"),
+        ("payload.tar.zst", "payload", ".tar.zst"),
+        ("bundle.tar.br", "bundle", ".tar.br"),
+        ("archive.tar.lz4", "archive", ".tar.lz4"),
+        ("archive.tar.lz", "archive", ".tar.lz"),
+        ("archive.tar.lzo", "archive", ".tar.lzo"),
+        ("archive.tar.lzma", "archive", ".tar.lzma"),
+        ("archive.tar.sz", "archive", ".tar.sz"),
+        ("archive.tar.z", "archive", ".tar.z"),
+        ("custom.tar.custom_algo_1", "custom", ".tar.custom_algo_1"),
+        # Double CPIO extensions
+        ("initramfs.cpio.gz", "initramfs", ".cpio.gz"),
+        ("initrd.cpio.xz", "initrd", ".cpio.xz"),
+        ("system.cpio.zst", "system", ".cpio.zst"),
+        # Userscript extensions
+        ("adblock.user.js", "adblock", ".user.js"),
+        ("SCRIPT.USER.JS", "SCRIPT", ".USER.JS"),
+        # Filenames with multiple dots
+        ("release.1.0.0.tar.gz", "release.1.0.0", ".tar.gz"),
+        ("my.report.final.v2.pdf", "my.report.final.v2", ".pdf"),
+        ("linux-6.10.5.tar.xz", "linux-6.10.5", ".tar.xz"),
+        ("app.min.js", "app.min", ".js"),
+        # Files without extension
+        ("Makefile", "Makefile", ""),
+        ("README", "README", ""),
+        ("no_ext_file", "no_ext_file", ""),
+        # Dotfiles (hidden files)
+        (".gitignore", ".gitignore", ""),
+        (".env", ".env", ""),
+    ],
+)
+def test_split_stem_and_extension_exhaustive(input_name, expected_stem, expected_ext):
+    stem, ext = _split_stem_and_extension(input_name)
+    assert stem == expected_stem
+    assert ext == expected_ext
 
 
 @pytest.mark.asyncio
@@ -78,6 +114,15 @@ async def test_find_available_file_name():
 
     # If file taken, increments to next available
     assert await find_available_file_name(storage, "report.pdf") == "report_2.pdf"
+
+    # Tarball collision renaming preserves double extension
+    files_tar = {
+        "backup.tar.gz": StoredFileInfo(
+            key="backup.tar.gz", size_bytes=100, created_at=datetime.now(UTC)
+        ),
+    }
+    storage_tar = DummyStorage(files_tar)
+    assert await find_available_file_name(storage_tar, "backup.tar.gz") == "backup_1.tar.gz"
 
 
 @pytest.mark.asyncio
@@ -257,3 +302,215 @@ async def test_resolve_real_filesystem_integration(tmp_path: Path):
     assert res_rename.action == EFileAction.DOWNLOAD
     assert res_rename.target_file_name == "real_target_1.bin"
     assert res_rename.is_renamed is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_remote_created_at_newer_than_remote():
+    """Local file is older than 24h, but is NEWER than remote Last-Modified timestamp -> REUSE."""
+    ref_time = datetime(2026, 8, 25, 12, 0, 0, tzinfo=UTC)
+    local_time = ref_time - timedelta(days=10)  # 10 days ago (> 24h)
+    remote_time = ref_time - timedelta(days=20)  # Server modified 20 days ago (older than local)
+
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=local_time),
+    }
+    storage = DummyStorage(files)
+
+    res = await resolve_file_policy(
+        storage,
+        "file.zip",
+        1000,
+        remote_created_at=remote_time,
+        policy=EFilePolicy.SMART_REUSE,
+        reference_time=ref_time,
+    )
+    assert res.action == EFileAction.REUSE
+    assert res.target_file_name == "file.zip"
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_remote_created_at_server_updated():
+    """Local file was modified 1h ago, but server updated 10min ago -> local file is stale."""
+    ref_time = datetime(2026, 8, 25, 12, 0, 0, tzinfo=UTC)
+    local_time = ref_time - timedelta(hours=1)
+    remote_time = ref_time - timedelta(minutes=10)  # Server is newer than local!
+
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=local_time),
+    }
+    storage = DummyStorage(files)
+
+    # SMART_REUSE fails because remote is newer
+    res_smart = await resolve_file_policy(
+        storage,
+        "file.zip",
+        1000,
+        remote_created_at=remote_time,
+        policy=EFilePolicy.SMART_REUSE,
+        reference_time=ref_time,
+    )
+    assert res_smart.action == EFileAction.ERROR
+
+    # REUSE_OR_UPDATE re-downloads to get newest version
+    res_update = await resolve_file_policy(
+        storage,
+        "file.zip",
+        1000,
+        remote_created_at=remote_time,
+        policy=EFilePolicy.REUSE_OR_UPDATE,
+        reference_time=ref_time,
+    )
+    assert res_update.action == EFileAction.DOWNLOAD
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_unknown_expected_size():
+    """When expected_size is None (e.g. dynamic stream), size cannot be validated."""
+    files = {
+        "stream.bin": StoredFileInfo(
+            key="stream.bin", size_bytes=1000, created_at=datetime.now(UTC)
+        ),
+    }
+    storage = DummyStorage(files)
+
+    # SMART_REUSE fails because expected size is None
+    res_smart = await resolve_file_policy(
+        storage,
+        "stream.bin",
+        expected_size=None,
+        policy=EFilePolicy.SMART_REUSE,
+    )
+    assert res_smart.action == EFileAction.ERROR
+
+    # REUSE_OR_UPDATE re-downloads
+    res_update = await resolve_file_policy(
+        storage,
+        "stream.bin",
+        expected_size=None,
+        policy=EFilePolicy.REUSE_OR_UPDATE,
+    )
+    assert res_update.action == EFileAction.DOWNLOAD
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_naive_datetime_handling():
+    """Naive datetimes should be automatically handled with UTC tzinfo."""
+    ref_time_naive = datetime(2026, 8, 25, 12, 0, 0)
+    local_time_naive = datetime(2026, 8, 25, 11, 0, 0)
+
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=local_time_naive),
+    }
+    storage = DummyStorage(files)
+
+    res = await resolve_file_policy(
+        storage,
+        "file.zip",
+        1000,
+        policy=EFilePolicy.SMART_REUSE,
+        reference_time=ref_time_naive,
+    )
+    assert res.action == EFileAction.REUSE
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_unhandled_policy_raises():
+    """An unknown policy value raises ValueError at the fallback step."""
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=datetime.now(UTC)),
+    }
+    storage = DummyStorage(files)
+
+    with pytest.raises(ValueError, match="Unhandled file policy"):
+        await resolve_file_policy(
+            storage,
+            "file.zip",
+            1000,
+            policy="invalid_unknown_policy",  # type: ignore
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_synthetic_name_unknown_size_auto_renames():
+    """Synthetic filename with expected_size=None must auto-rename to avoid overwriting unrelated file."""
+    files = {
+        "api_data.bin": StoredFileInfo(
+            key="api_data.bin", size_bytes=2000, created_at=datetime.now(UTC)
+        ),
+    }
+    storage = DummyStorage(files)
+
+    # REUSE_OR_UPDATE with synthetic name & unknown size -> auto-renames instead of overwriting
+    res = await resolve_file_policy(
+        storage,
+        "api_data.bin",
+        expected_size=None,
+        policy=EFilePolicy.REUSE_OR_UPDATE,
+        is_generated_name=True,
+    )
+    assert res.action == EFileAction.DOWNLOAD
+    assert res.target_file_name == "api_data_1.bin"
+    assert res.is_renamed is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_synthetic_name_reuse_same_size_auto_renames():
+    """Synthetic filename with REUSE_SAME_SIZE & size mismatch auto-renames."""
+    files = {
+        "api_data.bin": StoredFileInfo(
+            key="api_data.bin", size_bytes=2000, created_at=datetime.now(UTC)
+        ),
+    }
+    storage = DummyStorage(files)
+
+    res = await resolve_file_policy(
+        storage,
+        "api_data.bin",
+        expected_size=5000,
+        policy=EFilePolicy.REUSE_SAME_SIZE,
+        is_generated_name=True,
+    )
+    assert res.action == EFileAction.DOWNLOAD
+    assert res.target_file_name == "api_data_1.bin"
+    assert res.is_renamed is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_clock_skew_symmetric():
+    """Server Last-Modified 10 seconds ahead of local creation due to clock skew is tolerated."""
+    ref_time = datetime(2026, 8, 25, 12, 0, 0, tzinfo=UTC)
+    local_time = ref_time - timedelta(hours=1)
+    remote_time = local_time + timedelta(seconds=10)  # Server is 10s ahead (within 300s tolerance)
+
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=local_time),
+    }
+    storage = DummyStorage(files)
+
+    res = await resolve_file_policy(
+        storage,
+        "file.zip",
+        1000,
+        remote_created_at=remote_time,
+        policy=EFilePolicy.SMART_REUSE,
+        reference_time=ref_time,
+    )
+    assert res.action == EFileAction.REUSE
+
+
+@pytest.mark.asyncio
+async def test_resolve_policy_reuse_same_size_unknown_expected_size():
+    """REUSE_SAME_SIZE with expected_size=None returns ERROR with clear unknown size message."""
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=datetime.now(UTC)),
+    }
+    storage = DummyStorage(files)
+
+    res = await resolve_file_policy(
+        storage,
+        "file.zip",
+        expected_size=None,
+        policy=EFilePolicy.REUSE_SAME_SIZE,
+    )
+    assert res.action == EFileAction.ERROR
+    assert "Remote file size is unknown" in res.reason
