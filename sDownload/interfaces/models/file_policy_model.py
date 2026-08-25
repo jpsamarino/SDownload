@@ -28,8 +28,9 @@ class EFilePolicy(StrEnum):
     (Default) Strict cache reuse with error safety.
     - Reuses (REUSE) only if:
         1. Exact size matches (both sizes known and equal).
-        2. Local file is up-to-date: modified <24h ago OR newer than remote Last-Modified (5min clock skew tolerance).
-    - Otherwise: Raises FileAlreadyExistsError (ERROR) if size differs/unknown, local is stale (>24h), or server updated.
+        2. Local file is up-to-date: modified <24h (default freshness_ttl_seconds)
+           OR newer than remote Last-Modified (default 5min clock skew tolerance).
+    - Otherwise: Raises FileAlreadyExistsError (ERROR) if size differs/unknown, local is stale, or server updated.
     - Synthetic filenames: Auto-renames (file_1.bin) if size differs or is unknown.
     - Use case: Critical data pipelines where stale, modified, or unverifiable files must be rejected.
     """
@@ -39,8 +40,9 @@ class EFilePolicy(StrEnum):
     Smart synchronizer / mirror policy.
     - Reuses (REUSE) only if:
         1. Exact size matches (both sizes known and equal).
-        2. Local file is up-to-date: modified <24h ago OR newer than remote Last-Modified (5min clock skew tolerance).
-    - Otherwise: Re-downloads and updates the file in place (DOWNLOAD) — NO ERROR is raised.
+        2. Local file is up-to-date: modified <24h (default freshness_ttl_seconds)
+           OR newer than remote Last-Modified (default 5min clock skew tolerance).
+    - Otherwise: Re-downloads and updates the file in place (DOWNLOAD) — no error is raised.
     - Synthetic filenames: Auto-renames (file_1.bin) if size differs or is unknown.
     - Use case: Scheduled sync jobs and recurring download tasks that need to keep local files up-to-date.
     """
