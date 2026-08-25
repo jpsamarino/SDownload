@@ -1,0 +1,52 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from sDownload.global_settings import GlobalSettings, global_settings
+from sDownload.interfaces.models import EFileAction, EFilePolicy, StoredFileInfo
+from sDownload.utils.file_policy_resolver import resolve_file_policy
+
+
+class DummyStorage:
+    def __init__(self, files: dict[str, StoredFileInfo] | None = None) -> None:
+        self.files = files or {}
+
+    async def get_data_info(self, file_name: str) -> StoredFileInfo | None:
+        return self.files.get(file_name)
+
+
+def test_global_settings_defaults():
+    settings = GlobalSettings()
+    assert settings.freshness_ttl_seconds == 86400
+    assert settings.clock_skew_tolerance_seconds == 300
+    assert settings.default_timeout_connect_s == 15.0
+    assert settings.default_chunk_size_bytes == 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_global_settings_runtime_modification_affects_policy():
+    """Modifying global_settings.freshness_ttl_seconds in runtime dynamically alters policy decisions."""
+    ref_time = datetime(2026, 8, 25, 12, 0, 0, tzinfo=UTC)
+    local_time = ref_time - timedelta(hours=2)  # 2 hours old
+    files = {
+        "file.zip": StoredFileInfo(key="file.zip", size_bytes=1000, created_at=local_time),
+    }
+    storage = DummyStorage(files)
+
+    # By default (freshness_ttl_seconds=86400 / 24h), a 2h old file is fresh -> REUSE
+    global_settings.freshness_ttl_seconds = 86400
+    res_default = await resolve_file_policy(
+        storage, "file.zip", 1000, policy=EFilePolicy.SMART_REUSE, reference_time=ref_time
+    )
+    assert res_default.action == EFileAction.REUSE
+
+    # Change runtime global_settings to 1 hour (3600s) -> 2h old file is now stale -> ERROR
+    global_settings.freshness_ttl_seconds = 3600
+    res_stale = await resolve_file_policy(
+        storage, "file.zip", 1000, policy=EFilePolicy.SMART_REUSE, reference_time=ref_time
+    )
+    assert res_stale.action == EFileAction.ERROR
+    assert "age=7200s > 3600s" in res_stale.reason
+
+    # Reset back to default for safety
+    global_settings.freshness_ttl_seconds = 86400

@@ -2,6 +2,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from sDownload.global_settings import global_settings
 from sDownload.interfaces.models import (
     EFileAction,
     EFilePolicy,
@@ -48,9 +49,6 @@ async def find_available_file_name(
         if candidate_info is None:
             return candidate
         counter += 1
-
-
-CLOCK_SKEW_TOLERANCE_SECONDS = 300  # 5 minutes clock skew tolerance
 
 
 async def resolve_file_policy(
@@ -179,7 +177,11 @@ async def resolve_file_policy(
             local_dt = local_dt.replace(tzinfo=UTC)
 
         age_seconds = (now - local_dt).total_seconds()
-        is_recent_24h = -CLOCK_SKEW_TOLERANCE_SECONDS <= age_seconds <= 24 * 3600
+        is_recent_24h = (
+            -global_settings.clock_skew_tolerance_seconds
+            <= age_seconds
+            <= global_settings.freshness_ttl_seconds
+        )
 
         is_newer_than_remote = False
         is_older_than_remote = False
@@ -189,7 +191,7 @@ async def resolve_file_policy(
                 rem_dt = rem_dt.replace(tzinfo=UTC)
 
             remote_diff_seconds = (rem_dt - local_dt).total_seconds()
-            if remote_diff_seconds > CLOCK_SKEW_TOLERANCE_SECONDS:
+            if remote_diff_seconds > global_settings.clock_skew_tolerance_seconds:
                 is_older_than_remote = True
             else:
                 is_newer_than_remote = True
@@ -215,7 +217,7 @@ async def resolve_file_policy(
         elif is_older_than_remote:
             failure_reason = "Local file is older than remote Last-Modified timestamp"
         else:
-            failure_reason = f"Local file is stale (age={int(age_seconds)}s > 24h)"
+            failure_reason = f"Local file is stale (age={int(age_seconds)}s > {global_settings.freshness_ttl_seconds}s)"
 
         if policy == EFilePolicy.REUSE_OR_UPDATE:
             logger.info(
