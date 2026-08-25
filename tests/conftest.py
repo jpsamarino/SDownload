@@ -36,7 +36,6 @@ async def webdav_server():
     port = find_available_port(9000, 9500)
     user = "admin"
     password = "admin"
-    # Set credentials via environment variables
     container = (
         DockerContainer("sdownload_test_webdav")
         .with_bind_ports(80, port)
@@ -46,7 +45,6 @@ async def webdav_server():
     )
 
     container.start()
-    # Give it a moment to initialize
     await asyncio.sleep(2)
 
     host = container.get_container_host_ip()
@@ -67,7 +65,6 @@ async def webdav_public_server():
     """
     port = find_available_port(9501, 9999)
 
-    # Reuse the same image but allow anonymous methods
     container = (
         DockerContainer("sdownload_test_webdav")
         .with_bind_ports(80, port)
