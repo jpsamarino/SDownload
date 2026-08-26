@@ -26,3 +26,12 @@ class DownloadTaskParams:
 
     # Common Headers
     headers: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.max_conn < 1:
+            raise ValueError(f"max_conn must be >= 1, got {self.max_conn}")
+        if not self.use_chunked and self.max_conn > 1:
+            raise ValueError(
+                f"Conflicting parameters: max_conn={self.max_conn} cannot be greater than 1 "
+                "when use_chunked=False (single-stream mode)."
+            )

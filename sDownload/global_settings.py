@@ -14,6 +14,9 @@ class GlobalSettings:
     Can be configured via environment variables (.env) or modified in runtime.
     """
 
+    default_storage_dir: str = os.getenv("SDOWNLOAD_DEFAULT_STORAGE_DIR", "storage")
+    """Default local directory for downloaded files. Default: 'storage'."""
+
     freshness_ttl_seconds: int = int(os.getenv("SDOWNLOAD_FRESHNESS_TTL_SECONDS", 24 * 3600))
     """Maximum age in seconds for a cached file to be considered fresh. Default: 86400 (24h)."""
 
@@ -29,9 +32,6 @@ class GlobalSettings:
         os.getenv("SDOWNLOAD_DEFAULT_CHUNK_SIZE_BYTES", 1024 * 1024)
     )
     """Default chunk size in bytes for chunked downloads. Default: 1048576 (1MB)."""
-
-    default_storage_dir: str = os.getenv("SDOWNLOAD_DEFAULT_STORAGE_DIR", "storage")
-    """Default local directory for downloaded files. Default: 'storage'."""
 
     default_io_buffer_size_bytes: int = int(
         os.getenv("SDOWNLOAD_DEFAULT_IO_BUFFER_SIZE_BYTES", 1024 * 1024)
