@@ -102,4 +102,5 @@ For an in-depth comparison against traditional downloaders, read [docs/design_pr
 
 - [Architecture Overview & Layer Breakdown](docs/architecture.md)
 - [Design Principles & Philosophy](docs/design_principles.md)
-- [Conceptual Mindmap & High-Level Flow](docs/mindmap.md)
+- [File Policies & Collision Resolution](docs/file_policies.md)
+- [Global Configuration & Parameters Matrix](docs/configuration.md)

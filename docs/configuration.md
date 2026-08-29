@@ -13,7 +13,7 @@ flowchart LR
     A["1. Explicit Instance Param\n(Highest Priority)"] --> B["2. Runtime global_settings\n(Process Singleton)"] --> C["3. Environment (.env / OS)\n(SDOWNLOAD_*)"] --> D["4. Built-in Defaults\n(Fallback)"]
 ```
 
-$$\text{Instance Argument} > \text{Runtime } \texttt{global\_settings} > \text{Environment Variable } (\texttt{.env}) > \text{Built-in Default}$$
+**Precedence Rule:** `Instance Argument` > `Runtime global_settings` > `Environment Variable (.env)` > `Built-in Default`
 
 ---
 
