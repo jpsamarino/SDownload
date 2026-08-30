@@ -1,20 +1,20 @@
-# Operações com Ranges (`sDownload.utils.range_operations`)
+# Range Operations (`sDownload.utils.range_operations`)
 
-Este módulo contém as funções matemáticas e algorítmicas fundamentais do **SDownload** para planejamento de conexões, monitoramento de progresso em tempo real e reconstrução de arquivos a partir de múltiplos fragmentos.
+This module provides core mathematical and algorithmic utilities for connection partitioning, real-time download progress tracking, and graph-theoretic file reconstruction across partial or overlapping byte fragments.
 
 ---
 
 ## 1. `calculate_ranges`
 
-### Descrição
-Calcula e particiona os intervalos de bytes (`ChunkRange`) para um download, considerando o tamanho total do arquivo, o número desejado de conexões concorrentes e eventuais pedaços já baixados ou recuperados em cache.
+### Description
+Calculates and partitions byte ranges (`ChunkRange`) for a download job based on the total file size, target parallel connection count, and any pre-existing cached or recovered chunk fragments.
 
-Quando pedaços já existem (recuperação de download interrompido):
-- Preserva os pedaços já existentes.
-- Identifica todos os buracos (*gaps*) entre eles.
-- Divide os buracos em fatias proporcionais para download paralelo.
+When resuming an interrupted download:
+- Preserves all pre-existing chunk fragments.
+- Identifies all missing intervals (*gaps*) between cached parts.
+- Partitions each gap into proportional chunk sizes for parallel downloading.
 
-### Assinatura
+### Signature
 ```python
 def calculate_ranges(
     file_size: int,
@@ -23,46 +23,46 @@ def calculate_ranges(
 ) -> list[ChunkRange]:
 ```
 
-### Parâmetros
-* `file_size` (*int*): Tamanho total do arquivo em bytes.
-* `num_parts` (*int*): Número alvo de conexões/divisões simultâneas.
-* `cache` (*list[ChunkRange] | None*): Lista opcional de pedaços já existentes no disco/storage.
+### Parameters
+* `file_size` (*int*): Total size of the file in bytes.
+* `num_parts` (*int*): Desired number of parallel connection partitions.
+* `cache` (*list[ChunkRange] | None*): Optional list of pre-existing chunks on disk or storage.
 
-### Retorno
-* `list[ChunkRange]`: Lista contínua e ordenada de intervalos cobrindo todo o arquivo de `0` até `file_size - 1`.
+### Returns
+* `list[ChunkRange]`: Continuous, sorted list of ranges covering the entire file from `0` to `file_size - 1`.
 
 ---
 
-### Exemplo 1: Particionamento Inicial do Zero
+### Example 1: Initial Partitioning from Scratch
 ```python
 from sDownload.interfaces.models import ChunkRange
 from sDownload.utils.range_operations import calculate_ranges
 
-# Arquivo de 100 MB dividido em 4 partes iguais
-file_size = 100 * 1024 * 1024  # 104.857.600 bytes
+# 100 MB file partitioned into 4 equal segments
+file_size = 100 * 1024 * 1024  # 104,857,600 bytes
 ranges = calculate_ranges(file_size, num_parts=4)
 
 for r in ranges:
     print(r)
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
 ChunkRange(start=0, end=26214399)
 ChunkRange(start=26214400, end=52428799)
 ChunkRange(start=52428800, end=78643199)
 ChunkRange(start=78643200, end=None)
 ```
-*(O último chunk tem `end=None` para permitir ler até o EOF sem truncamento).*
+*(The last chunk uses `end=None` to read until EOF without premature truncation).*
 
 ---
 
-### Exemplo 2: Retomada com Pedaços em Cache (Preenchimento de Gaps)
+### Example 2: Resume with Cached Chunks (Gap Filling)
 ```python
 from sDownload.interfaces.models import ChunkRange
 from sDownload.utils.range_operations import calculate_ranges
 
-# Arquivo de 200 bytes com pedaços já baixados: [0..10] e [50..100]
+# 200-byte file with recovered chunks: [0..10] and [50..100]
 cached = [ChunkRange(0, 10), ChunkRange(50, 100)]
 ranges = calculate_ranges(file_size=200, num_parts=4, cache=cached)
 
@@ -70,29 +70,29 @@ for r in ranges:
     print(r)
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
-ChunkRange(start=0, end=10)       # Chunk recuperado do cache
-ChunkRange(start=11, end=49)      # Gap preenchido
-ChunkRange(start=50, end=100)     # Chunk recuperado do cache
-ChunkRange(start=101, end=150)    # Gap preenchido
-ChunkRange(start=151, end=None)   # Gap final até o fim do arquivo
+ChunkRange(start=0, end=10)       # Preserved recovered chunk
+ChunkRange(start=11, end=49)      # Missing gap partitioned
+ChunkRange(start=50, end=100)     # Preserved recovered chunk
+ChunkRange(start=101, end=150)    # Missing gap partitioned
+ChunkRange(start=151, end=None)   # Final gap to EOF
 ```
 
 ---
 
 ## 2. `calculate_downloaded_bytes`
 
-### Descrição
-Calcula o **volume total real de bytes únicos baixados** a partir das estatísticas dos chunks (`ChunkDownloadStats`). 
+### Description
+Calculates the **exact total unique downloaded bytes** across active and completed chunks from `ChunkDownloadStats`.
 
-Projetada especificamente para o *Hot Path* (executada a cada atualização de progresso), esta função possui complexidade linear $O(k)$ e não realiza cópias de dados, garantindo telemetria leve e imune a:
-* Chunks sobrepostos gerados por divisões dinâmicas (*work-stealing*).
-* Bytes excedentes de socket (*buffer overshoot* de conexões canceladas).
-* Chunks cancelados ou depreciados (apenas status `DOWNLOADING` e `COMPLETED` com bytes $> 0$ são contabilizados).
-* Downloads em stream contínuo (`file_size=None`).
+Engineered specifically for the *Hot Path* (executed on every progress tick), this function has linear time complexity $O(k)$ and avoids object allocations, ensuring lightweight telemetry that is immune to:
+* Overlapping chunk boundaries caused by dynamic resizing (*work-stealing*).
+* Socket buffer overshoots on cancelled or stalled connections.
+* Deprecated or cancelled chunks (only `DOWNLOADING` and `COMPLETED` chunks with `bytes_downloaded > 0` are counted).
+* Continuous streaming downloads where `file_size=None`.
 
-### Assinatura
+### Signature
 ```python
 def calculate_downloaded_bytes(
     stats_list: Iterable[ChunkDownloadStats | None],
@@ -100,48 +100,48 @@ def calculate_downloaded_bytes(
 ) -> int:
 ```
 
-### Parâmetros
-* `stats_list` (*Iterable[ChunkDownloadStats | None]*): Coleção de estatísticas dos chunks ativos e concluídos.
-* `file_size` (*int | None*): Tamanho total do arquivo (se conhecido). Se fornecido, impede que o total ultrapasse o tamanho do arquivo.
+### Parameters
+* `stats_list` (*Iterable[ChunkDownloadStats | None]*): Collection of chunk statistics.
+* `file_size` (*int | None*): Total file size (if known), used as an upper-bound clamp to prevent counting buffer overshoots beyond file bounds.
 
-### Retorno
-* `int`: Quantidade total exata de bytes únicos baixados.
+### Returns
+* `int`: Exact count of unique, non-overlapping downloaded bytes.
 
 ---
 
-### Exemplo 1: Cálculo com Sobreposição de Chunks
+### Example 1: Dynamic Split with Overlapping Ranges
 ```python
 from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
 from sDownload.utils.range_operations import calculate_downloaded_bytes
 
-# Cenário de split dinâmico onde o Chunk A baixou até 60 e o Chunk B começou no 50
+# Dynamic split scenario: Chunk A reached byte 59 before split, Chunk B started at 50
 chunk_a = ChunkDownloadStats(
     chunk_file_name="chunk_a.bin",
     range=ChunkRange(0, 100),
-    bytes_downloaded=60,  # Cobriu [0..59] (60 bytes)
+    bytes_downloaded=60,  # Covered [0..59] (60 bytes)
     status=EDownloadStatus.DOWNLOADING,
 )
 
 chunk_b = ChunkDownloadStats(
     chunk_file_name="chunk_b.bin",
     range=ChunkRange(50, 100),
-    bytes_downloaded=30,  # Cobriu [50..79] (30 bytes)
+    bytes_downloaded=30,  # Covered [50..79] (30 bytes)
     status=EDownloadStatus.DOWNLOADING,
 )
 
-# A união dos intervalos [0..59] e [50..79] é [0..79] = 80 bytes únicos
+# Interval union of [0..59] and [50..79] is [0..79] = 80 unique bytes
 total_bytes = calculate_downloaded_bytes([chunk_a, chunk_b], file_size=100)
-print(f"Total baixado: {total_bytes} bytes")
+print(f"Total downloaded: {total_bytes} bytes")
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
-Total baixado: 80 bytes
+Total downloaded: 80 bytes
 ```
 
 ---
 
-### Exemplo 2: Ignorando Chunks Cancelados ou Depreciados
+### Example 2: Ignoring Cancelled or Failed Chunks
 ```python
 from sDownload.interfaces.models import ChunkDownloadStats, ChunkRange, EDownloadStatus
 from sDownload.utils.range_operations import calculate_downloaded_bytes
@@ -156,31 +156,31 @@ chunk_ok = ChunkDownloadStats(
 chunk_cancelled = ChunkDownloadStats(
     chunk_file_name="dead.bin",
     range=ChunkRange(50, 99),
-    bytes_downloaded=30,  # Baixou 30 bytes antes de falhar
-    status=EDownloadStatus.CANCELLED,  # Status cancelado é desconsiderado
+    bytes_downloaded=30,  # Downloaded 30 bytes before connection failed
+    status=EDownloadStatus.CANCELLED,  # Cancelled status is filtered out
 )
 
 total_bytes = calculate_downloaded_bytes([chunk_ok, chunk_cancelled])
-print(f"Total baixado: {total_bytes} bytes")
+print(f"Total downloaded: {total_bytes} bytes")
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
-Total baixado: 50 bytes
+Total downloaded: 50 bytes
 ```
 
 ---
 
 ## 3. `calculate_optimal_coverage`
 
-### Descrição
-Resolve o problema de **reconstrução ótima do arquivo final**. 
+### Description
+Solves the **optimal file reconstruction and assembly problem**.
 
-Durante downloads multi-chunk e redimensionamentos dinâmicos (*work-stealing*), podem existir múltiplos fragmentos parciais ou redundantes no disco. Esta função modela os intervalos de chunks disponíveis como nós em um grafo direcionado e utiliza uma busca em largura (BFS / Dijkstra) para encontrar o **menor número de fragmentos contínuos** necessários para montar o arquivo de `0` até `file_size` com precisão de byte e zero sobreposição no arquivo final.
+During multi-chunk downloads and dynamic resizing, multiple partial or overlapping file fragments may exist on disk. This function models available chunk fragments as nodes in a directed graph and uses Breadth-First Search (BFS / Dijkstra) to find the **shortest path with the minimum number of file operations** to reconstruct the entire file range from `0` to `file_size` with byte-level precision and zero duplicate writes.
 
-Se houver qualquer intervalo de bytes faltante (gap), a função levanta `ValueError` indicando corrupção ou arquivo incompleto.
+If any byte interval is missing (*gap*), the function raises `ValueError` to prevent saving a corrupted file.
 
-### Assinatura
+### Signature
 ```python
 def calculate_optimal_coverage(
     chunks: list[ChunkRange],
@@ -188,73 +188,72 @@ def calculate_optimal_coverage(
 ) -> list[ChunkFragment]:
 ```
 
-### Parâmetros
-* `chunks` (*list[ChunkRange]*): Lista de todos os ranges disponíveis dos arquivos baixados.
-* `file_size` (*int | None*): Tamanho total esperado do arquivo. Se `None`, busca um chunk com terminação aberta (`end=None`).
+### Parameters
+* `chunks` (*list[ChunkRange]*): List of all available chunk ranges on storage.
+* `file_size` (*int | None*): Target file size. If `None`, searches for an open-ended chunk (`end=None`).
 
-### Retorno
-* `list[ChunkFragment]`: Lista ordenada de fragmentos, onde cada `ChunkFragment` contém o range do arquivo fonte e o limite de bytes a ser lido (`read_limit_qt_bytes`), garantindo que pedaços excedentes sejam cortados na fusão final.
+### Returns
+* `list[ChunkFragment]`: Ordered list of fragments, where each `ChunkFragment` specifies the source chunk range and the read boundary limit (`read_limit_qt_bytes`) for accurate truncation during merge.
 
 ---
 
-### Exemplo 1: Selecionando o Menor Caminho entre Múltiplos Fragmentos
+### Example 1: Selecting Shortest Path and Pruning Redundant Fragments
 ```python
 from sDownload.interfaces.models import ChunkRange
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
-# Fragmentos disponíveis no disco
+# Available fragments on storage
 chunks = [
     ChunkRange(0, 100),  # Chunk A: [0..100] (101 bytes)
-    ChunkRange(50, 200),  # Chunk B: [50..200] (Sobreposição)
-    ChunkRange(101, 300),  # Chunk C: [101..300] (Encaixe perfeito com Chunk A)
+    ChunkRange(50, 200),  # Chunk B: [50..200] (Redundant overlap)
+    ChunkRange(101, 300),  # Chunk C: [101..300] (Continuous with Chunk A)
 ]
 
-# Reconstruir arquivo de 301 bytes (de 0 a 300)
+# Reconstruct file of 301 bytes (0..300)
 coverage = calculate_optimal_coverage(chunks, file_size=301)
 
 for fragment in coverage:
-    print(f"Fonte: {fragment.range} | Ler até: {fragment.read_limit_qt_bytes} bytes")
+    print(f"Source: {fragment.range} | Read limit: {fragment.read_limit_qt_bytes}")
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
-Fonte: ChunkRange(start=0, end=100) | Ler até: None bytes (lê o arquivo inteiro)
-Fonte: ChunkRange(start=101, end=300) | Ler até: None bytes (lê o arquivo inteiro)
+Source: ChunkRange(start=0, end=100) | Read limit: None (read entire fragment)
+Source: ChunkRange(start=101, end=300) | Read limit: None (read entire fragment)
 ```
-*(O algoritmo descartou automaticamente o Chunk B redundante e selecionou o caminho de menor número de operações de I/O).*
+*(Redundant Chunk B was pruned automatically; assembly uses the minimum 2 merge operations).*
 
 ---
 
-### Exemplo 2: Detectando Fragmento com Limite de Corte (Crop na Fusão)
+### Example 2: Crop Limits for In-Flight Extended Chunks
 ```python
 from sDownload.interfaces.models import ChunkRange
 from sDownload.utils.range_operations import calculate_optimal_coverage
 
-# Um chunk que foi estendido além do necessário
+# Overlapping fragments requiring boundary crop
 chunks = [
-    ChunkRange(0, 150),  # Chunk 1: [0..150]
-    ChunkRange(100, 200),  # Chunk 2: [100..200]
+    ChunkRange(0, 150),
+    ChunkRange(100, 200),
 ]
 
-# Queremos montar até 201 bytes (0..200)
 coverage = calculate_optimal_coverage(chunks, file_size=201)
 
 for fragment in coverage:
-    print(f"Fonte: {fragment.range} | Limite de leitura: {fragment.read_limit_qt_bytes}")
+    print(f"Source: {fragment.range} | Read limit: {fragment.read_limit_qt_bytes}")
 ```
 
-**Saída Esperada:**
+**Expected Output:**
 ```text
-Fonte: ChunkRange(start=0, end=150) | Limite de leitura: 100 (lê apenas os primeiros 100 bytes)
-Fonte: ChunkRange(start=100, end=200) | Limite de leitura: None (lê o restante até o fim)
+Source: ChunkRange(start=0, end=150) | Read limit: 100 (read only first 100 bytes)
+Source: ChunkRange(start=100, end=200) | Read limit: None (read remaining bytes to end)
 ```
 
 ---
 
-## 4. Tabela Resumo
+## 4. Summary Table
 
-| Função | Finalidade Principal | Complexidade | Quando é Usada |
+| Function | Primary Responsibility | Complexity | Execution Phase |
 |---|---|---|---|
-| `calculate_ranges` | Particionamento inicial e preenchimento de gaps no resume | $O(N \log N)$ | Início do download (`on_start`) |
-| `calculate_downloaded_bytes` | Cálculo de bytes baixados para barra de progresso e estatísticas | $O(k \log k)$ | Em cada tick do download (`on_update`) |
-| `calculate_optimal_coverage` | Resolução do grafo de montagem e corte de arquivos | $O(V + E)$ (BFS) | Finalização e fusão do arquivo (`_finalize`) |
+| `calculate_ranges` | Initial partitioning and resume gap filling | $O(N \log N)$ | Download start (`on_start`) |
+| `calculate_downloaded_bytes` | Unique byte accumulation for progress and stats | $O(k \log k)$ | Hot path on every tick (`on_update`) |
+| `calculate_optimal_coverage` | Graph assembly and crop limit resolution | $O(V + E)$ (BFS) | Finalization and merge (`_finalize`) |
