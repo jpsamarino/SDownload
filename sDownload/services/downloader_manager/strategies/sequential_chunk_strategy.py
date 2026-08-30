@@ -30,7 +30,9 @@ class SequentialChunkStrategy(DownloadStrategyProtocol):
         self._pending_ranges: list[ChunkRange] = []
         self._initialized = False
 
-    def _calc_initial_ranges(self, file_size: int) -> list[ChunkRange]:
+    def _calc_initial_ranges(
+        self, file_size: int, cache: list[ChunkRange] | None = None
+    ) -> list[ChunkRange]:
         if not self.use_chunked_download or file_size <= 0:
             return [ChunkRange(0, None)]
 
@@ -39,7 +41,8 @@ class SequentialChunkStrategy(DownloadStrategyProtocol):
         if file_size // self.max_conn < limit_size_per_chunk:
             target_qt_conn = max(1, file_size // limit_size_per_chunk)
 
-        return calculate_ranges(file_size, target_qt_conn, self.cache)
+        effective_cache = cache if cache is not None else self.cache
+        return calculate_ranges(file_size, target_qt_conn, effective_cache)
 
     def on_start(
         self,
@@ -47,11 +50,10 @@ class SequentialChunkStrategy(DownloadStrategyProtocol):
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
         available_slots: int,
     ) -> list[AnyStrategyAction]:
-        if chunks_stats:
-            return []
-
         if not self._initialized:
-            self._pending_ranges = self._calc_initial_ranges(dl_stats.file_size)
+            cached_ranges = list(chunks_stats.keys()) if chunks_stats else self.cache
+            all_ranges = self._calc_initial_ranges(dl_stats.file_size, cache=cached_ranges)
+            self._pending_ranges = [r for r in all_ranges if r not in chunks_stats]
             self._initialized = True
 
         return self._issue_pending(available_slots)

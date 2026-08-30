@@ -55,10 +55,17 @@ def test_multi_chunk_strategy_on_start_with_cache():
 def test_multi_chunk_strategy_on_start_already_running():
     strategy = MultiChunkDownloadStrategy(max_conn=4)
     dl_stats = DownloadStats(file_size=10 * 1024 * 1024)
-    chunks_stats = {ChunkRange(0, 100): None}  # Mocking some status
+    # Fully completed cache: all ranges already covered
+    full_cache_stats = {ChunkRange(0, 10 * 1024 * 1024 - 1): None}
 
-    actions = strategy.on_start(dl_stats, chunks_stats, available_slots=4)
+    actions = strategy.on_start(dl_stats, full_cache_stats, available_slots=4)
     assert actions == []
+
+    # Partial cache: missing gap from 101 to EOF is started
+    partial_cache_stats = {ChunkRange(0, 100): None}
+    partial_actions = strategy.on_start(dl_stats, partial_cache_stats, available_slots=4)
+    assert len(partial_actions) > 0
+    assert partial_actions[0].range.start == 101
 
 
 def test_multi_chunk_strategy_on_update():

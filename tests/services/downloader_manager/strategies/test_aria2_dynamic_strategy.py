@@ -150,3 +150,43 @@ def test_aria2_strategy_streaming_mode():
         dl_stats, {stream_stat.range: stream_stat}, available_slots=2
     )
     assert update_actions == []
+
+
+def test_aria2_strategy_resumes_from_recovery_chunks_stats():
+    """Validates that on_start correctly uses calculate_ranges to find and start missing gaps from recovery."""
+    strategy = Aria2DynamicStrategy(max_conn=4)
+    dl_stats = DownloadStats(file_size=100 * 1024 * 1024)
+
+    # Chunk [0, 19_999_999] was already completed previously
+    recovered_chunk = make_stat(0, 19_999_999, 20 * 1024 * 1024, status=EDownloadStatus.COMPLETED)
+    chunks_stats = {recovered_chunk.range: recovered_chunk}
+
+    actions = strategy.on_start(dl_stats, chunks_stats, available_slots=4)
+
+    assert len(actions) > 0
+    # Must NOT start the already completed chunk
+    for a in actions:
+        assert isinstance(a, StrategyAction.Start)
+        assert a.range != recovered_chunk.range
+        assert a.range.start >= 20_000_000
+
+
+def test_aria2_strategy_drains_pending_gaps_on_update():
+    """Validates that extra missing gaps from recovery are queued and dispatched on update."""
+    strategy = Aria2DynamicStrategy(max_conn=4)
+    dl_stats = DownloadStats(file_size=100 * 1024 * 1024)
+
+    # Two chunks completed, leaving two separated gaps
+    chunk1 = make_stat(0, 19_999_999, 20 * 1024 * 1024, status=EDownloadStatus.COMPLETED)
+    chunk2 = make_stat(50_000_000, 69_999_999, 20 * 1024 * 1024, status=EDownloadStatus.COMPLETED)
+    chunks_stats = {chunk1.range: chunk1, chunk2.range: chunk2}
+
+    # Only 1 slot available on start
+    actions_start = strategy.on_start(dl_stats, chunks_stats, available_slots=1)
+    assert len(actions_start) == 1
+    assert actions_start[0].range.start == 20_000_000
+
+    # When a slot becomes available on update, pending gaps must be issued first
+    actions_update = strategy.on_update(dl_stats, chunks_stats, available_slots=1)
+    assert len(actions_update) == 1
+    assert actions_update[0].range.start >= 70_000_000

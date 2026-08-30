@@ -42,6 +42,7 @@ class Aria2DynamicStrategy(DownloadStrategyProtocol):
         )
         self.use_chunked_download = use_chunked_download
         self.cache = cache
+        self._pending_gaps: list[ChunkRange] = []
         self._initialized = False
 
     def on_start(
@@ -50,7 +51,7 @@ class Aria2DynamicStrategy(DownloadStrategyProtocol):
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
         available_slots: int,
     ) -> list[AnyStrategyAction]:
-        if chunks_stats or available_slots <= 0:
+        if available_slots <= 0:
             return []
 
         if not self._initialized:
@@ -59,13 +60,18 @@ class Aria2DynamicStrategy(DownloadStrategyProtocol):
             if not self.use_chunked_download or not dl_stats.file_size or dl_stats.file_size <= 0:
                 return [StrategyAction.Start(range=ChunkRange(0, None))]
 
-            if self.cache:
-                initial_ranges = calculate_ranges(
+            cached_ranges = list(chunks_stats.keys()) if chunks_stats else (self.cache or [])
+            if cached_ranges:
+                all_ranges = calculate_ranges(
                     dl_stats.file_size,
                     min(self.max_conn, available_slots),
-                    self.cache,
+                    cached_ranges,
                 )
-                return [StrategyAction.Start(range=r) for r in initial_ranges[:available_slots]]
+                new_gaps = [r for r in all_ranges if r not in chunks_stats]
+                slots_to_use = min(available_slots, len(new_gaps))
+                actions = [StrategyAction.Start(range=r) for r in new_gaps[:slots_to_use]]
+                self._pending_gaps = new_gaps[slots_to_use:]
+                return actions
 
             return [StrategyAction.Start(range=ChunkRange(0, dl_stats.file_size - 1))]
 
@@ -88,7 +94,16 @@ class Aria2DynamicStrategy(DownloadStrategyProtocol):
         actions: list[AnyStrategyAction] = []
         slots_left = available_slots
 
-        # Collect candidate active chunks
+        # 1. First, drain any pending gaps from recovery
+        while slots_left > 0 and self._pending_gaps:
+            gap_range = self._pending_gaps.pop(0)
+            actions.append(StrategyAction.Start(range=gap_range))
+            slots_left -= 1
+
+        if slots_left <= 0:
+            return actions
+
+        # 2. Then, dynamically split largest active chunks
         active_candidates: list[tuple[ChunkRange, int, int]] = []
         for s in chunks_stats.values():
             if s.status == EDownloadStatus.DOWNLOADING and s.range.end is not None:
@@ -134,4 +149,5 @@ class Aria2DynamicStrategy(DownloadStrategyProtocol):
         dl_stats: DownloadStats,
         chunks_stats: dict[ChunkRange, ChunkDownloadStats],
     ) -> None:
+        self._pending_gaps.clear()
         self._initialized = False
