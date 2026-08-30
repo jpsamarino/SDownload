@@ -1,6 +1,66 @@
 from collections import deque
+from collections.abc import Iterable
 
-from sDownload.interfaces.models import ChunkFragment, ChunkRange
+from sDownload.interfaces.models import (
+    ChunkDownloadStats,
+    ChunkFragment,
+    ChunkRange,
+    EDownloadStatus,
+)
+
+
+def calculate_downloaded_bytes(
+    stats_list: Iterable[ChunkDownloadStats | None],
+    file_size: int | None = None,
+) -> int:
+    """
+    Calculates the total unique downloaded bytes across active and completed chunks,
+    properly deduplicating overlapping ranges, respecting chunk/file bounds,
+    and ignoring deprecated or cancelled chunks.
+    """
+    intervals: list[tuple[int, int]] = []
+    for s in stats_list:
+        if not s or not s.range:
+            continue
+
+        if (
+            s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.COMPLETED)
+            and s.bytes_downloaded > 0
+        ):
+            start = s.range.start
+            calculated_end = start + s.bytes_downloaded - 1
+            # Respect the chunk's own defined boundary
+            end = min(calculated_end, s.range.end) if s.range.end is not None else calculated_end
+
+            # Respect total file_size upper bound if provided
+            if file_size is not None and file_size > 0:
+                end = min(end, file_size - 1)
+
+            if end >= start:
+                intervals.append((start, end))
+
+    if not intervals:
+        return 0
+
+    intervals.sort(key=lambda x: x[0])
+
+    total_bytes = 0
+    cur_start, cur_end = intervals[0]
+
+    for start, end in intervals[1:]:
+        if start <= cur_end + 1:
+            if end > cur_end:
+                cur_end = end
+        else:
+            total_bytes += cur_end - cur_start + 1
+            cur_start, cur_end = start, end
+
+    total_bytes += cur_end - cur_start + 1
+
+    if file_size is not None and file_size > 0:
+        return min(total_bytes, file_size)
+
+    return total_bytes
 
 
 def calculate_ranges(
