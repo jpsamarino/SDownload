@@ -27,15 +27,10 @@ def make_stat(
     )
 
 
-# ==============================================================================
-# 1. Defesa contra Dados Nulos e Malformados
-# ==============================================================================
 def test_defensive_against_none_and_malformed_stats():
     """Validates that calculate_downloaded_bytes handles None items and malformed stats gracefully."""
-    # Empty stats
     assert calculate_downloaded_bytes([]) == 0
 
-    # None and corrupted range items in collection
     valid_stat = make_stat(0, 499, 500, EDownloadStatus.COMPLETED)
     malformed_stat = make_stat(500, 999, 500, EDownloadStatus.COMPLETED)
     malformed_stat.range = None  # Simulate corrupted range
@@ -44,9 +39,6 @@ def test_defensive_against_none_and_malformed_stats():
     assert calculate_downloaded_bytes(stats) == 500
 
 
-# ==============================================================================
-# 2. Contrato de Limites: file_size Fixo vs Stream Infinito
-# ==============================================================================
 def test_file_size_and_streaming_bounds():
     """
     Validates bounds behavior:
@@ -63,9 +55,6 @@ def test_file_size_and_streaming_bounds():
     assert calculate_downloaded_bytes(stats, file_size=None) == 1200
 
 
-# ==============================================================================
-# 3. Proteção de Borda do Próprio Chunk (Socket Overshoot)
-# ==============================================================================
 def test_chunk_boundary_reach_clamping():
     """
     Validates that a chunk's bytes cannot overshoot past its own s.range.end
@@ -78,9 +67,6 @@ def test_chunk_boundary_reach_clamping():
     assert calculate_downloaded_bytes(stats) == 100
 
 
-# ==============================================================================
-# 4. Mosaico Complexo Determinístico (24 Chunks, Micro-Gaps, Sucessão e Subconjuntos)
-# ==============================================================================
 def test_deterministic_complex_mosaic():
     """
     Deterministic stress test with 24 handcrafted chunks across 5 regions:
@@ -135,9 +121,6 @@ def test_deterministic_complex_mosaic():
     assert calculate_downloaded_bytes(stats) == 1279
 
 
-# ==============================================================================
-# 5. Validação Cruzada Probabilística (10 Loops com Dijkstra / BFS)
-# ==============================================================================
 def test_cross_validation_dijkstra_10_loops():
     """
     Performs 10 consecutive randomized stress loops with 100-300 chunks each.
