@@ -95,6 +95,7 @@ class DownloadTask:
     def strategy(self) -> DownloadStrategyProtocol:
         return self._strategy
 
+    # verificar
     async def _resolve_file_info(self) -> ResourceInfo:
         """
         Queries the remote resource info, validates existence in storage,
@@ -224,15 +225,33 @@ class DownloadTask:
         self._done_event.clear()
         self._controller_task = asyncio.create_task(self._dl_controller())
 
-    def _execute_strategy_action(self, action: AnyStrategyAction) -> None:
+    async def _execute_strategy_action(self, action: AnyStrategyAction) -> None:
         if not self._chunk_manager:
             return
         if isinstance(action, StrategyAction.Start):
-            self._chunk_manager.start_chunk(action.range)
-        elif isinstance(action, StrategyAction.Split):
-            self._chunk_manager.resize_chunk(action.current_range, action.new_range)
-        elif isinstance(action, StrategyAction.SetChunkSpeed):
-            self._chunk_manager.set_chunk_speed(action.range, action.target_speed_bytes)
+            self._chunk_manager.start_chunk(
+                chunk_range=action.range,
+                target_speed_bps=action.target_speed_bps,
+            )
+        elif isinstance(action, StrategyAction.Resize):
+            self._chunk_manager.resize_chunk(
+                current_range=action.current_range,
+                new_range=action.new_range,
+            )
+            if action.target_speed_bps is not None:
+                self._chunk_manager.set_speed_limit(
+                    speed_bps=action.target_speed_bps,
+                    chunk_range=action.new_range,
+                )
+        elif isinstance(action, StrategyAction.Cancel):
+            await self._chunk_manager.cancel_chunk(action.range)
+        elif isinstance(action, StrategyAction.SetSpeed):
+            self._chunk_manager.set_speed_limit(
+                speed_bps=action.target_speed_bps or 0.0,
+                chunk_range=action.range,
+            )
+        else:
+            logger.warning("Unknown strategy action received: %s", type(action))
 
     async def _finalize(self) -> None:
         if not self._chunk_manager:
@@ -286,7 +305,7 @@ class DownloadTask:
                 available_slots=self._max_conn,
             )
             for action in initial_actions:
-                self._execute_strategy_action(action)
+                await self._execute_strategy_action(action)
 
             # 2. Supervisory loop
             while self._status == EDownloadStatus.DOWNLOADING:
@@ -328,7 +347,7 @@ class DownloadTask:
                     available_slots=available_slots,
                 )
                 for action in update_actions:
-                    self._execute_strategy_action(action)
+                    await self._execute_strategy_action(action)
 
         except asyncio.CancelledError:
             logger.debug("DownloadTask controller cancelled for %s", self._file_name)
