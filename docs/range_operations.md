@@ -35,7 +35,6 @@ def calculate_ranges(
 
 ### Example 1: Initial Partitioning from Scratch
 ```python
-from sDownload.interfaces.models import ChunkRange
 from sDownload.utils.range_operations import calculate_ranges
 
 # 100 MB file partitioned into 4 equal segments
@@ -43,17 +42,18 @@ file_size = 100 * 1024 * 1024  # 104,857,600 bytes
 ranges = calculate_ranges(file_size, num_parts=4)
 
 for r in ranges:
-    print(r)
+    end_display = r.end if r.end is not None else "EOF"
+    print(f"Chunk range: [{r.start} to {end_display}]")
 ```
 
 **Expected Output:**
 ```text
-ChunkRange(start=0, end=26214399)
-ChunkRange(start=26214400, end=52428799)
-ChunkRange(start=52428800, end=78643199)
-ChunkRange(start=78643200, end=None)
+Chunk range: [0 to 26214399]
+Chunk range: [26214400 to 52428799]
+Chunk range: [52428800 to 78643199]
+Chunk range: [78643200 to EOF]
 ```
-*(The last chunk uses `end=None` to read until EOF without premature truncation).*
+*(The last chunk uses `end=None`, displayed as `EOF`, allowing the stream to read until the file ends without premature truncation).*
 
 ---
 
@@ -67,16 +67,18 @@ cached = [ChunkRange(0, 10), ChunkRange(50, 100)]
 ranges = calculate_ranges(file_size=200, num_parts=4, cache=cached)
 
 for r in ranges:
-    print(r)
+    end_display = r.end if r.end is not None else "EOF"
+    status = "Cached fragment" if r in cached else "New gap to download"
+    print(f"Chunk range: [{r.start} to {end_display}] -> {status}")
 ```
 
 **Expected Output:**
 ```text
-ChunkRange(start=0, end=10)       # Preserved recovered chunk
-ChunkRange(start=11, end=49)      # Missing gap partitioned
-ChunkRange(start=50, end=100)     # Preserved recovered chunk
-ChunkRange(start=101, end=150)    # Missing gap partitioned
-ChunkRange(start=151, end=None)   # Final gap to EOF
+Chunk range: [0 to 10] -> Cached fragment
+Chunk range: [11 to 49] -> New gap to download
+Chunk range: [50 to 100] -> Cached fragment
+Chunk range: [101 to 150] -> New gap to download
+Chunk range: [151 to EOF] -> New gap to download
 ```
 
 ---
@@ -118,6 +120,7 @@ from sDownload.utils.range_operations import calculate_downloaded_bytes
 chunk_a = ChunkDownloadStats(
     chunk_file_name="chunk_a.bin",
     range=ChunkRange(0, 100),
+    file_size=101,
     bytes_downloaded=60,  # Covered [0..59] (60 bytes)
     status=EDownloadStatus.DOWNLOADING,
 )
@@ -125,18 +128,19 @@ chunk_a = ChunkDownloadStats(
 chunk_b = ChunkDownloadStats(
     chunk_file_name="chunk_b.bin",
     range=ChunkRange(50, 100),
+    file_size=51,
     bytes_downloaded=30,  # Covered [50..79] (30 bytes)
     status=EDownloadStatus.DOWNLOADING,
 )
 
 # Interval union of [0..59] and [50..79] is [0..79] = 80 unique bytes
 total_bytes = calculate_downloaded_bytes([chunk_a, chunk_b], file_size=100)
-print(f"Total downloaded: {total_bytes} bytes")
+print(f"Total unique bytes downloaded: {total_bytes} bytes")
 ```
 
 **Expected Output:**
 ```text
-Total downloaded: 80 bytes
+Total unique bytes downloaded: 80 bytes
 ```
 
 ---
@@ -149,6 +153,7 @@ from sDownload.utils.range_operations import calculate_downloaded_bytes
 chunk_ok = ChunkDownloadStats(
     chunk_file_name="ok.bin",
     range=ChunkRange(0, 49),
+    file_size=50,
     bytes_downloaded=50,
     status=EDownloadStatus.COMPLETED,
 )
@@ -156,17 +161,18 @@ chunk_ok = ChunkDownloadStats(
 chunk_cancelled = ChunkDownloadStats(
     chunk_file_name="dead.bin",
     range=ChunkRange(50, 99),
+    file_size=50,
     bytes_downloaded=30,  # Downloaded 30 bytes before connection failed
     status=EDownloadStatus.CANCELLED,  # Cancelled status is filtered out
 )
 
 total_bytes = calculate_downloaded_bytes([chunk_ok, chunk_cancelled])
-print(f"Total downloaded: {total_bytes} bytes")
+print(f"Total unique bytes downloaded: {total_bytes} bytes")
 ```
 
 **Expected Output:**
 ```text
-Total downloaded: 50 bytes
+Total unique bytes downloaded: 50 bytes
 ```
 
 ---
@@ -213,13 +219,18 @@ chunks = [
 coverage = calculate_optimal_coverage(chunks, file_size=301)
 
 for fragment in coverage:
-    print(f"Source: {fragment.range} | Read limit: {fragment.read_limit_qt_bytes}")
+    read_limit = (
+        f"up to {fragment.read_limit_qt_bytes} bytes"
+        if fragment.read_limit_qt_bytes
+        else "read full fragment"
+    )
+    print(f"Source chunk [{fragment.range.start}..{fragment.range.end}] -> {read_limit}")
 ```
 
 **Expected Output:**
 ```text
-Source: ChunkRange(start=0, end=100) | Read limit: None (read entire fragment)
-Source: ChunkRange(start=101, end=300) | Read limit: None (read entire fragment)
+Source chunk [0..100] -> read full fragment
+Source chunk [101..300] -> read full fragment
 ```
 *(Redundant Chunk B was pruned automatically; assembly uses the minimum 2 merge operations).*
 
@@ -239,13 +250,18 @@ chunks = [
 coverage = calculate_optimal_coverage(chunks, file_size=201)
 
 for fragment in coverage:
-    print(f"Source: {fragment.range} | Read limit: {fragment.read_limit_qt_bytes}")
+    read_limit = (
+        f"up to {fragment.read_limit_qt_bytes} bytes"
+        if fragment.read_limit_qt_bytes
+        else "read full fragment"
+    )
+    print(f"Source chunk [{fragment.range.start}..{fragment.range.end}] -> {read_limit}")
 ```
 
 **Expected Output:**
 ```text
-Source: ChunkRange(start=0, end=150) | Read limit: 100 (read only first 100 bytes)
-Source: ChunkRange(start=100, end=200) | Read limit: None (read remaining bytes to end)
+Source chunk [0..150] -> up to 100 bytes
+Source chunk [100..200] -> read full fragment
 ```
 
 ---
