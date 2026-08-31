@@ -823,3 +823,55 @@ async def test_chunk_manager_stream_slow_1mb_integration(nginx_custom, storage):
     stored = await storage.get_data_info("stream_slow_1mb.bin")
     assert stored is not None
     assert stored.size_bytes == 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_qt_active_chunks_lifecycle(setup_downloader_and_config, storage):
+    """Validates that qt_active_chunks tracks running tasks accurately across the chunk lifecycle."""
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=False)
+    chunk_params = setup["chunk_params"]
+    downloader = setup["downloader"]
+
+    async with ChunkManager(chunk_params, downloader, storage) as manager:
+        # 1. Initially zero active chunks
+        assert manager.qt_active_chunks == 0
+
+        # 2. Starting first chunk increments counter to 1
+        manager.start_chunk(ChunkRange(0, 51199))
+        assert manager.qt_active_chunks == 1
+
+        # 3. Starting second chunk increments counter to 2
+        manager.start_chunk(ChunkRange(51200, 102399))
+        assert manager.qt_active_chunks == 2
+
+        # 4. Attempting to start duplicate chunk does not increment counter
+        manager.start_chunk(ChunkRange(0, 51199))
+        assert manager.qt_active_chunks == 2
+
+        # 5. Waiting for completion decrements counter back to 0
+        completed = await manager.wait_for_completed_chunks()
+        assert len(completed) == 2
+        assert manager.qt_active_chunks == 0
+
+
+@pytest.mark.asyncio
+async def test_chunk_manager_qt_active_chunks_cancellation(setup_downloader_and_config, storage):
+    """Validates that cancelling an in-flight chunk immediately decrements qt_active_chunks."""
+    setup = await setup_downloader_and_config(file_name="file_100k.bin", limit_speed=True)
+    chunk_params = setup["chunk_params"]
+    downloader = setup["downloader"]
+
+    async with ChunkManager(chunk_params, downloader, storage) as manager:
+        manager.start_chunk(ChunkRange(0, 51199))
+        manager.start_chunk(ChunkRange(51200, 102399))
+        assert manager.qt_active_chunks == 2
+
+        # Cancel one active chunk
+        cancelled = await manager.cancel_chunk(ChunkRange(51200, 102399))
+        assert cancelled is True
+        assert manager.qt_active_chunks == 1
+
+        # Cancel remaining chunk
+        cancelled = await manager.cancel_chunk(ChunkRange(0, 51199))
+        assert cancelled is True
+        assert manager.qt_active_chunks == 0
