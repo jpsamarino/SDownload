@@ -28,7 +28,10 @@ from sDownload.services.downloader_manager.default_providers import default_prov
 from sDownload.services.downloader_manager.strategies import (
     SingleStreamStrategy,
 )
-from sDownload.utils import resolve_file_policy
+from sDownload.utils import (
+    calculate_downloaded_bytes,
+    resolve_file_policy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +319,8 @@ class DownloadTask:
 
                 # Update task statistics
                 current_stats = list(self._chunk_manager.stats.values())
-                total_downloaded = sum(s.bytes_downloaded for s in current_stats)
+                file_sz = self._resource_info.file_size if self._resource_info else None
+                total_downloaded = calculate_downloaded_bytes(current_stats, file_size=file_sz)
                 if self._dl_stats:
                     self._dl_stats.set_bytes_downloaded(total_downloaded)
                     self._dl_stats.update()
@@ -334,13 +338,8 @@ class DownloadTask:
                     await self._finalize()
                     break
 
-                # Query strategy for dynamic actions
-                active_count = sum(
-                    1
-                    for s in current_stats
-                    if s.status in (EDownloadStatus.DOWNLOADING, EDownloadStatus.PENDING)
-                )
-                available_slots = max(0, self._max_conn - active_count)
+                # Query strategy for dynamic actions using O(1) active chunks property
+                available_slots = max(0, self._max_conn - self._chunk_manager.qt_active_chunks)
                 update_actions = self._strategy.on_update(
                     dl_stats=self._dl_stats,
                     chunks_stats=dict(self._chunk_manager.stats),

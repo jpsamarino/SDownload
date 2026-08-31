@@ -284,3 +284,37 @@ async def test_execute_resize_action():
     assert stats_successor.target_speed_bps == 30_000
 
     await task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_qt_active_chunks_and_available_slots():
+    """Validates that ChunkManager.qt_active_chunks accurately reflects in-flight tasks and feeds DownloadTask available_slots."""
+    observed_slots: list[int] = []
+
+    class SlotObserverStrategy(DownloadStrategyProtocol):
+        def on_start(self, dl_stats, chunks_stats, available_slots):
+            # Start 2 chunks out of max_conn=4
+            return [
+                StrategyAction.Start(range=ChunkRange(0, 499)),
+                StrategyAction.Start(range=ChunkRange(500, 999)),
+            ]
+
+        def on_update(self, dl_stats, chunks_stats, available_slots):
+            observed_slots.append(available_slots)
+            return []
+
+        def on_end(self, dl_stats, chunks_stats):
+            pass
+
+    task, _, _ = make_task_setup(SlotObserverStrategy())
+    await task.start()
+    await asyncio.sleep(0.25)
+
+    # ChunkManager must report 2 active chunk tasks in O(1)
+    assert task._chunk_manager.qt_active_chunks == 2
+
+    # Since max_conn=4 and 2 chunks are active, available_slots passed to strategy must be 2
+    assert len(observed_slots) > 0
+    assert 2 in observed_slots
+
+    await task.cancel()

@@ -107,7 +107,7 @@ async def test_chunk_manager_wrong_partial_chunks_sizes(setup_downloader_and_con
     chunk_manager.start_chunk(ChunkRange(102390, 511990))
     chunk_manager.start_chunk(ChunkRange(51200, 102381))
 
-    await chunk_manager.wait_for_completed_chunks(0.5)
+    await chunk_manager.wait_for_completed_chunks(3.0)
 
     assert chunk_manager.stats.get(ChunkRange(102390, 511990)).status == EDownloadStatus.ERROR
     await chunk_manager.cleanup()

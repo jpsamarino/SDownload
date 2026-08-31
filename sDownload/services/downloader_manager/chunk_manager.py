@@ -90,6 +90,13 @@ class ChunkManager:
         """
         return MappingProxyType(self._chunks_stats)
 
+    @property
+    def qt_active_chunks(self) -> int:
+        """
+        Returns the number of active chunk tasks.
+        """
+        return len(self._chunks_tasks)
+
     def _register_chunk_stats(
         self,
         chunk_range: ChunkRange,
